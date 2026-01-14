@@ -18,6 +18,9 @@ import NotFound from "./pages/NotFound";
 
 // Admin Pages
 import AdminOverview from "./pages/admin/AdminOverview";
+import AdminExams from "./pages/admin/AdminExams";
+import AdminExamStructure from "./pages/admin/AdminExamStructure";
+import AdminQuestions from "./pages/admin/AdminQuestions";
 import AdminPayments from "./pages/admin/AdminPayments";
 
 const queryClient = new QueryClient();
@@ -44,6 +47,9 @@ const App = () => (
             
             {/* Admin Routes */}
             <Route path="/admin" element={<AdminOverview />} />
+            <Route path="/admin/exams" element={<AdminExams />} />
+            <Route path="/admin/exams/:examId/structure" element={<AdminExamStructure />} />
+            <Route path="/admin/questions" element={<AdminQuestions />} />
             <Route path="/admin/payments" element={<AdminPayments />} />
             
             {/* Catch All */}

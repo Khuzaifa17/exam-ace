@@ -11,11 +11,11 @@ interface AdminLayoutProps {
 }
 
 const navItems = [
-  { href: '/admin', icon: LayoutDashboard, label: 'Overview' },
-  { href: '/admin/exams', icon: BookOpen, label: 'Exams' },
-  { href: '/admin/questions', icon: FileText, label: 'Questions' },
-  { href: '/admin/import', icon: Upload, label: 'Import' },
-  { href: '/admin/payments', icon: CreditCard, label: 'Payments' },
+  { href: '/admin', icon: LayoutDashboard, label: 'Overview', exact: true },
+  { href: '/admin/exams', icon: BookOpen, label: 'Exams', exact: false },
+  { href: '/admin/questions', icon: FileText, label: 'Questions', exact: true },
+  { href: '/admin/import', icon: Upload, label: 'Import', exact: true },
+  { href: '/admin/payments', icon: CreditCard, label: 'Payments', exact: true },
 ];
 
 export const AdminLayout = ({ children }: AdminLayoutProps) => {
