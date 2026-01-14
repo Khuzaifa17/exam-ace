@@ -23,6 +23,7 @@ import AdminExamStructure from "./pages/admin/AdminExamStructure";
 import AdminQuestions from "./pages/admin/AdminQuestions";
 import AdminPayments from "./pages/admin/AdminPayments";
 import AdminUsers from "./pages/admin/AdminUsers";
+import AdminImport from "./pages/admin/AdminImport";
 
 const queryClient = new QueryClient();
 
@@ -51,10 +52,9 @@ const App = () => (
             <Route path="/admin/exams" element={<AdminExams />} />
             <Route path="/admin/exams/:examId/structure" element={<AdminExamStructure />} />
             <Route path="/admin/questions" element={<AdminQuestions />} />
+            <Route path="/admin/import" element={<AdminImport />} />
             <Route path="/admin/payments" element={<AdminPayments />} />
             <Route path="/admin/users" element={<AdminUsers />} />
-            
-            {/* Catch All */}
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
