@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { 
   ChevronLeft, Plus, Edit2, Trash2, FolderOpen, BookOpen, FileText, 
-  ChevronDown, ChevronRight, GripVertical, Loader2, MoreVertical 
+  ChevronDown, ChevronRight, GripVertical, Loader2, MoreVertical, HelpCircle
 } from 'lucide-react';
 import { AdminLayout } from './AdminLayout';
 import { Button } from '@/components/ui/button';
@@ -68,11 +68,26 @@ const AdminExamStructure = () => {
   const [editingNode, setEditingNode] = useState<ContentNode | null>(null);
   const [deleteNode, setDeleteNode] = useState<ContentNode | null>(null);
   const [parentNodeId, setParentNodeId] = useState<string | null>(null);
-
+  const [manageQuestionsNode, setManageQuestionsNode] = useState<ContentNode | null>(null);
+  const [isQuestionFormOpen, setIsQuestionFormOpen] = useState(false);
+  
   const [formData, setFormData] = useState({
     title: '',
     description: '',
     node_type: 'TRACK' as NodeType,
+  });
+
+  const [questionFormData, setQuestionFormData] = useState({
+    text1: '',
+    option1: '',
+    option2: '',
+    option3: '',
+    option4: '',
+    correct_option: 1,
+    explanation: '',
+    difficulty: 'medium' as 'easy' | 'medium' | 'hard',
+    year: '',
+    source: '',
   });
 
   // Fetch exam details
@@ -197,9 +212,86 @@ const AdminExamStructure = () => {
     },
   });
 
+  // Fetch questions for selected node
+  const { data: nodeQuestions, isLoading: isLoadingQuestions } = useQuery({
+    queryKey: ['node-questions', manageQuestionsNode?.id],
+    queryFn: async () => {
+      if (!manageQuestionsNode) return [];
+      const { data, error } = await supabase
+        .from('questions')
+        .select('*')
+        .eq('content_node_id', manageQuestionsNode.id)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!manageQuestionsNode,
+  });
+
+  // Create question mutation
+  const createQuestion = useMutation({
+    mutationFn: async (data: typeof questionFormData & { content_node_id: string }) => {
+      const { error } = await supabase.from('questions').insert({
+        content_node_id: data.content_node_id,
+        text1: data.text1,
+        option1: data.option1,
+        option2: data.option2,
+        option3: data.option3,
+        option4: data.option4,
+        correct_option: data.correct_option,
+        explanation: data.explanation || null,
+        difficulty: data.difficulty,
+        year: data.year ? parseInt(data.year) : null,
+        source: data.source || null,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success('Question added successfully');
+      queryClient.invalidateQueries({ queryKey: ['node-questions', manageQuestionsNode?.id] });
+      queryClient.invalidateQueries({ queryKey: ['admin-content-nodes', examId] });
+      resetQuestionForm();
+      setIsQuestionFormOpen(false);
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to add question');
+    },
+  });
+
+  // Delete question mutation
+  const deleteQuestionMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('questions').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success('Question deleted');
+      queryClient.invalidateQueries({ queryKey: ['node-questions', manageQuestionsNode?.id] });
+      queryClient.invalidateQueries({ queryKey: ['admin-content-nodes', examId] });
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to delete question');
+    },
+  });
+
   const resetForm = () => {
     setFormData({ title: '', description: '', node_type: 'TRACK' });
     setParentNodeId(null);
+  };
+
+  const resetQuestionForm = () => {
+    setQuestionFormData({
+      text1: '',
+      option1: '',
+      option2: '',
+      option3: '',
+      option4: '',
+      correct_option: 1,
+      explanation: '',
+      difficulty: 'medium',
+      year: '',
+      source: '',
+    });
   };
 
   const openCreateDialog = (parentId: string | null = null, suggestedType?: NodeType) => {
@@ -330,10 +422,12 @@ const AdminExamStructure = () => {
                     key={node.id}
                     node={node}
                     level={0}
+                    examId={examId!}
                     onEdit={openEditDialog}
                     onDelete={setDeleteNode}
                     onAddChild={(parentId, type) => openCreateDialog(parentId, type)}
                     getChildType={getChildType}
+                    onManageQuestions={setManageQuestionsNode}
                   />
                 ))}
               </div>
@@ -454,6 +548,206 @@ const AdminExamStructure = () => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Manage Questions Dialog */}
+        <Dialog open={!!manageQuestionsNode} onOpenChange={(open) => {
+          if (!open) {
+            setManageQuestionsNode(null);
+            setIsQuestionFormOpen(false);
+            resetQuestionForm();
+          }
+        }}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <HelpCircle className="h-5 w-5 text-emerald-600" />
+                Manage Questions - {manageQuestionsNode?.title}
+              </DialogTitle>
+              <DialogDescription>
+                Add and manage questions for this topic
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="flex-1 overflow-y-auto space-y-4">
+              {/* Add Question Button */}
+              {!isQuestionFormOpen && (
+                <Button onClick={() => setIsQuestionFormOpen(true)} className="w-full">
+                  <Plus className="h-4 w-4" />
+                  Add New Question
+                </Button>
+              )}
+
+              {/* Question Form */}
+              {isQuestionFormOpen && (
+                <Card className="border-emerald-500/30">
+                  <CardHeader className="py-3">
+                    <CardTitle className="text-base">New Question</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-2">
+                      <Label>Question Text *</Label>
+                      <Textarea
+                        value={questionFormData.text1}
+                        onChange={(e) => setQuestionFormData({ ...questionFormData, text1: e.target.value })}
+                        placeholder="Enter question..."
+                        rows={2}
+                        required
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      {[1, 2, 3, 4].map((num) => (
+                        <div key={num} className="space-y-1">
+                          <Label className="text-xs">
+                            Option {num} {questionFormData.correct_option === num && '✓'}
+                          </Label>
+                          <Input
+                            value={questionFormData[`option${num}` as keyof typeof questionFormData] as string}
+                            onChange={(e) => setQuestionFormData({ ...questionFormData, [`option${num}`]: e.target.value })}
+                            placeholder={`Option ${num}`}
+                            required
+                          />
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Correct Option</Label>
+                        <Select
+                          value={questionFormData.correct_option.toString()}
+                          onValueChange={(value) => setQuestionFormData({ ...questionFormData, correct_option: parseInt(value) })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {[1, 2, 3, 4].map((num) => (
+                              <SelectItem key={num} value={num.toString()}>Option {num}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Difficulty</Label>
+                        <Select
+                          value={questionFormData.difficulty}
+                          onValueChange={(value: 'easy' | 'medium' | 'hard') => setQuestionFormData({ ...questionFormData, difficulty: value })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="easy">Easy</SelectItem>
+                            <SelectItem value="medium">Medium</SelectItem>
+                            <SelectItem value="hard">Hard</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Year (optional)</Label>
+                        <Input
+                          value={questionFormData.year}
+                          onChange={(e) => setQuestionFormData({ ...questionFormData, year: e.target.value })}
+                          placeholder="2024"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs">Explanation (optional)</Label>
+                      <Textarea
+                        value={questionFormData.explanation}
+                        onChange={(e) => setQuestionFormData({ ...questionFormData, explanation: e.target.value })}
+                        placeholder="Explain the answer..."
+                        rows={2}
+                      />
+                    </div>
+
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setIsQuestionFormOpen(false);
+                          resetQuestionForm();
+                        }}
+                        className="flex-1"
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          if (!questionFormData.text1 || !questionFormData.option1 || !questionFormData.option2 || !questionFormData.option3 || !questionFormData.option4) {
+                            toast.error('Please fill all required fields');
+                            return;
+                          }
+                          createQuestion.mutate({
+                            ...questionFormData,
+                            content_node_id: manageQuestionsNode!.id,
+                          });
+                        }}
+                        disabled={createQuestion.isPending}
+                        className="flex-1"
+                      >
+                        {createQuestion.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                        Add Question
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Questions List */}
+              <div className="space-y-2">
+                <h4 className="font-medium text-sm text-muted-foreground">
+                  Existing Questions ({nodeQuestions?.length || 0})
+                </h4>
+                {isLoadingQuestions ? (
+                  <div className="space-y-2">
+                    {[1, 2].map((i) => (
+                      <Skeleton key={i} className="h-16 w-full" />
+                    ))}
+                  </div>
+                ) : nodeQuestions && nodeQuestions.length > 0 ? (
+                  <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                    {nodeQuestions.map((q, idx) => (
+                      <div key={q.id} className="p-3 rounded-lg border bg-card">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm line-clamp-2">{idx + 1}. {q.text1}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <Badge variant="outline" className="text-xs">
+                                Answer: Option {q.correct_option}
+                              </Badge>
+                              {q.difficulty && (
+                                <Badge variant="secondary" className="text-xs">
+                                  {q.difficulty}
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            onClick={() => deleteQuestionMutation.mutate(q.id)}
+                            disabled={deleteQuestionMutation.isPending}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <HelpCircle className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">No questions yet. Add your first question above!</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </AdminLayout>
   );
@@ -462,18 +756,21 @@ const AdminExamStructure = () => {
 interface TreeNodeComponentProps {
   node: ContentNode;
   level: number;
+  examId: string;
   onEdit: (node: ContentNode) => void;
   onDelete: (node: ContentNode) => void;
   onAddChild: (parentId: string, type: NodeType) => void;
   getChildType: (parentType: NodeType) => NodeType;
+  onManageQuestions: (node: ContentNode) => void;
 }
 
-const TreeNodeComponent = ({ node, level, onEdit, onDelete, onAddChild, getChildType }: TreeNodeComponentProps) => {
+const TreeNodeComponent = ({ node, level, examId, onEdit, onDelete, onAddChild, getChildType, onManageQuestions }: TreeNodeComponentProps) => {
   const [isOpen, setIsOpen] = useState(level < 2);
   const hasChildren = node.children && node.children.length > 0;
   const config = nodeTypeConfig[node.node_type];
   const Icon = config.icon;
   const canAddChildren = node.node_type !== 'TOPIC';
+  const isTopic = node.node_type === 'TOPIC';
 
   return (
     <div className={cn(level > 0 && 'ml-6 border-l-2 border-border pl-4')}>
@@ -517,6 +814,17 @@ const TreeNodeComponent = ({ node, level, onEdit, onDelete, onAddChild, getChild
 
           {/* Actions */}
           <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+            {isTopic && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onManageQuestions(node)}
+                className="text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/10"
+              >
+                <HelpCircle className="h-4 w-4" />
+                Questions
+              </Button>
+            )}
             {canAddChildren && (
               <Button
                 variant="ghost"
@@ -555,10 +863,12 @@ const TreeNodeComponent = ({ node, level, onEdit, onDelete, onAddChild, getChild
                 key={child.id}
                 node={child}
                 level={level + 1}
+                examId={examId}
                 onEdit={onEdit}
                 onDelete={onDelete}
                 onAddChild={onAddChild}
                 getChildType={getChildType}
+                onManageQuestions={onManageQuestions}
               />
             ))}
           </CollapsibleContent>
