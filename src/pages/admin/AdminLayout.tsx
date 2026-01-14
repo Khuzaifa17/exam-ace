@@ -1,7 +1,6 @@
 import { ReactNode } from 'react';
 import { Link, useLocation, Navigate } from 'react-router-dom';
 import { LayoutDashboard, BookOpen, FileText, Upload, CreditCard, Users, ChevronLeft } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -20,7 +19,7 @@ const navItems = [
 ];
 
 export const AdminLayout = ({ children }: AdminLayoutProps) => {
-  const { isAdmin, loading } = useAuth();
+  const { isAdmin, loading, user } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -40,6 +39,12 @@ export const AdminLayout = ({ children }: AdminLayoutProps) => {
     );
   }
 
+  // Not signed in → send to login (instead of silently redirecting to dashboard)
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  // Signed in but not an admin
   if (!isAdmin) {
     return <Navigate to="/dashboard" replace />;
   }
