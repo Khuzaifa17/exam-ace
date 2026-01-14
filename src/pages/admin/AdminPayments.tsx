@@ -19,28 +19,65 @@ import {
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 
+interface PaymentWithDetails {
+  id: string;
+  user_id: string;
+  exam_id: string;
+  payment_method: string;
+  transaction_id: string;
+  amount: number;
+  status: string;
+  admin_notes: string | null;
+  created_at: string;
+  exam_title?: string;
+  user_name?: string;
+}
+
 const AdminPayments = () => {
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedPayment, setSelectedPayment] = useState<any>(null);
+  const [selectedPayment, setSelectedPayment] = useState<PaymentWithDetails | null>(null);
   const [actionType, setActionType] = useState<'approve' | 'reject' | null>(null);
   const [adminNotes, setAdminNotes] = useState('');
 
-  // Fetch all payments
+  // Fetch all payments with separate queries for related data
   const { data: payments, isLoading } = useQuery({
     queryKey: ['admin-payments'],
     queryFn: async () => {
-      const { data, error } = await supabase
+      // Fetch payments
+      const { data: paymentsData, error: paymentsError } = await supabase
         .from('payments')
-        .select(`
-          *,
-          exams (title),
-          profiles!payments_user_id_fkey (full_name)
-        `)
+        .select('*')
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      return data;
+      if (paymentsError) throw paymentsError;
+      if (!paymentsData) return [];
+
+      // Get unique exam IDs and user IDs
+      const examIds = [...new Set(paymentsData.map(p => p.exam_id))];
+      const userIds = [...new Set(paymentsData.map(p => p.user_id))];
+
+      // Fetch exams
+      const { data: examsData } = await supabase
+        .from('exams')
+        .select('id, title')
+        .in('id', examIds);
+
+      // Fetch profiles
+      const { data: profilesData } = await supabase
+        .from('profiles')
+        .select('user_id, full_name')
+        .in('user_id', userIds);
+
+      // Map data
+      const examsMap = new Map(examsData?.map(e => [e.id, e.title]) || []);
+      const profilesMap = new Map(profilesData?.map(p => [p.user_id, p.full_name]) || []);
+
+      return paymentsData.map(payment => ({
+        ...payment,
+        exam_title: examsMap.get(payment.exam_id) || 'Unknown Exam',
+        user_name: profilesMap.get(payment.user_id) || 'Unknown User',
+      })) as PaymentWithDetails[];
     },
   });
 
@@ -87,12 +124,12 @@ const AdminPayments = () => {
     const searchLower = searchQuery.toLowerCase();
     return (
       payment.transaction_id?.toLowerCase().includes(searchLower) ||
-      payment.exams?.title?.toLowerCase().includes(searchLower) ||
-      payment.profiles?.full_name?.toLowerCase().includes(searchLower)
+      payment.exam_title?.toLowerCase().includes(searchLower) ||
+      payment.user_name?.toLowerCase().includes(searchLower)
     );
   });
 
-  const handleAction = (payment: any, action: 'approve' | 'reject') => {
+  const handleAction = (payment: PaymentWithDetails, action: 'approve' | 'reject') => {
     setSelectedPayment(payment);
     setActionType(action);
     setAdminNotes('');
@@ -165,9 +202,9 @@ const AdminPayments = () => {
                         {payment.status === 'rejected' && <XCircle className="h-6 w-6" />}
                       </div>
                       <div>
-                        <div className="font-medium">{payment.profiles?.full_name || 'Unknown User'}</div>
+                        <div className="font-medium">{payment.user_name}</div>
                         <div className="text-sm text-muted-foreground">
-                          {payment.exams?.title} • {payment.payment_method.toUpperCase()}
+                          {payment.exam_title} • {payment.payment_method.toUpperCase()}
                         </div>
                         <div className="text-xs text-muted-foreground mt-1">
                           TxID: {payment.transaction_id}
@@ -239,8 +276,8 @@ const AdminPayments = () => {
 
             <div className="space-y-4 py-4">
               <div className="p-4 rounded-lg bg-muted/50 text-sm">
-                <div><strong>User:</strong> {selectedPayment?.profiles?.full_name}</div>
-                <div><strong>Exam:</strong> {selectedPayment?.exams?.title}</div>
+                <div><strong>User:</strong> {selectedPayment?.user_name}</div>
+                <div><strong>Exam:</strong> {selectedPayment?.exam_title}</div>
                 <div><strong>Amount:</strong> PKR {selectedPayment?.amount}</div>
                 <div><strong>Transaction ID:</strong> {selectedPayment?.transaction_id}</div>
               </div>
