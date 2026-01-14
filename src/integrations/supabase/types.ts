@@ -41,6 +41,13 @@ export type Database = {
             referencedRelation: "questions"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "bookmarks_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "questions_public"
+            referencedColumns: ["id"]
+          },
         ]
       }
       content_nodes: {
@@ -341,6 +348,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "test_questions_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "questions_public"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "test_questions_test_id_fkey"
             columns: ["test_id"]
             isOneToOne: false
@@ -426,9 +440,72 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      questions_public: {
+        Row: {
+          content_node_id: string | null
+          created_at: string | null
+          difficulty: Database["public"]["Enums"]["difficulty_level"] | null
+          explanation: string | null
+          id: string | null
+          option1: string | null
+          option2: string | null
+          option3: string | null
+          option4: string | null
+          source: string | null
+          text1: string | null
+          updated_at: string | null
+          year: number | null
+        }
+        Insert: {
+          content_node_id?: string | null
+          created_at?: string | null
+          difficulty?: Database["public"]["Enums"]["difficulty_level"] | null
+          explanation?: string | null
+          id?: string | null
+          option1?: string | null
+          option2?: string | null
+          option3?: string | null
+          option4?: string | null
+          source?: string | null
+          text1?: string | null
+          updated_at?: string | null
+          year?: number | null
+        }
+        Update: {
+          content_node_id?: string | null
+          created_at?: string | null
+          difficulty?: Database["public"]["Enums"]["difficulty_level"] | null
+          explanation?: string | null
+          id?: string | null
+          option1?: string | null
+          option2?: string | null
+          option3?: string | null
+          option4?: string | null
+          source?: string | null
+          text1?: string | null
+          updated_at?: string | null
+          year?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "questions_content_node_id_fkey"
+            columns: ["content_node_id"]
+            isOneToOne: false
+            referencedRelation: "content_nodes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
+      check_answer: {
+        Args: { question_id: string; selected_option: number }
+        Returns: {
+          correct_option: number
+          explanation: string
+          is_correct: boolean
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
