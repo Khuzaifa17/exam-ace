@@ -1,25 +1,30 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Bookmark, BookmarkCheck, Clock, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Bookmark, BookmarkCheck, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
-interface Question {
+interface QuestionPublic {
   id: string;
   text1: string;
   option1: string;
   option2: string;
   option3: string;
   option4: string;
-  correct_option: number;
   explanation: string | null;
   difficulty: 'easy' | 'medium' | 'hard' | null;
+  content_node_id: string;
+}
+
+interface AnswerResult {
+  is_correct: boolean;
+  correct_option: number;
+  explanation: string | null;
 }
 
 const Practice = () => {
@@ -34,27 +39,34 @@ const Practice = () => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [showAnswer, setShowAnswer] = useState(false);
-  const [answers, setAnswers] = useState<Record<string, { selected: number; correct: boolean }>>({});
+  const [currentAnswer, setCurrentAnswer] = useState<AnswerResult | null>(null);
+  const [answers, setAnswers] = useState<Record<string, { selected: number; correct: boolean; correctOption: number }>>({});
 
-  // Fetch questions
+  // Fetch questions from the SECURE VIEW (no correct_option exposed)
   const { data: questions, isLoading } = useQuery({
     queryKey: ['practice-questions', examId, nodeId],
     queryFn: async () => {
       if (!examId) return [];
 
+      // First get content nodes for this exam
+      const { data: nodes, error: nodesError } = await supabase
+        .from('content_nodes')
+        .select('id')
+        .eq('exam_id', examId);
+
+      if (nodesError) throw nodesError;
+      if (!nodes || nodes.length === 0) return [];
+
+      const nodeIds = nodes.map(n => n.id);
+
+      // Query the SECURE view (questions_public) - no correct_option!
       let query = supabase
-        .from('questions')
-        .select(`
-          *,
-          content_nodes!inner (
-            exam_id
-          )
-        `)
-        .eq('content_nodes.exam_id', examId)
+        .from('questions_public')
+        .select('*')
+        .in('content_node_id', nodeIds)
         .limit(20);
 
       if (nodeId) {
-        // TODO: Include descendant nodes
         query = query.eq('content_node_id', nodeId);
       }
 
@@ -62,7 +74,7 @@ const Practice = () => {
       if (error) throw error;
       
       // Shuffle questions
-      return (data as Question[]).sort(() => Math.random() - 0.5);
+      return (data as QuestionPublic[]).sort(() => Math.random() - 0.5);
     },
     enabled: !!examId,
   });
@@ -109,6 +121,32 @@ const Practice = () => {
     },
   });
 
+  // Check answer using secure server-side function
+  const checkAnswerMutation = useMutation({
+    mutationFn: async ({ questionId, selected }: { questionId: string; selected: number }) => {
+      const { data, error } = await supabase
+        .rpc('check_answer', { 
+          question_id: questionId, 
+          selected_option: selected 
+        });
+      
+      if (error) throw error;
+      return data[0] as AnswerResult;
+    },
+    onSuccess: (result, variables) => {
+      setCurrentAnswer(result);
+      setAnswers((prev) => ({
+        ...prev,
+        [variables.questionId]: { 
+          selected: variables.selected, 
+          correct: result.is_correct,
+          correctOption: result.correct_option
+        },
+      }));
+      setShowAnswer(true);
+    },
+  });
+
   const currentQuestion = questions?.[currentIndex];
   const isBookmarked = currentQuestion && bookmarks?.includes(currentQuestion.id);
 
@@ -120,12 +158,11 @@ const Practice = () => {
   const handleSubmitAnswer = () => {
     if (selectedOption === null || !currentQuestion) return;
     
-    const isCorrect = selectedOption === currentQuestion.correct_option;
-    setAnswers((prev) => ({
-      ...prev,
-      [currentQuestion.id]: { selected: selectedOption, correct: isCorrect },
-    }));
-    setShowAnswer(true);
+    // Call secure server-side function to check answer
+    checkAnswerMutation.mutate({ 
+      questionId: currentQuestion.id, 
+      selected: selectedOption 
+    });
   };
 
   const handleNext = () => {
@@ -134,6 +171,7 @@ const Practice = () => {
       setCurrentIndex(currentIndex + 1);
       setSelectedOption(null);
       setShowAnswer(false);
+      setCurrentAnswer(null);
     }
   };
 
@@ -143,10 +181,16 @@ const Practice = () => {
       const prevQuestion = questions?.[currentIndex - 1];
       if (prevQuestion && answers[prevQuestion.id]) {
         setSelectedOption(answers[prevQuestion.id].selected);
+        setCurrentAnswer({
+          is_correct: answers[prevQuestion.id].correct,
+          correct_option: answers[prevQuestion.id].correctOption,
+          explanation: null
+        });
         setShowAnswer(true);
       } else {
         setSelectedOption(null);
         setShowAnswer(false);
+        setCurrentAnswer(null);
       }
     }
   };
@@ -274,21 +318,21 @@ const Practice = () => {
               {/* Options */}
               <div className="space-y-3 mb-8">
                 {[1, 2, 3, 4].map((optionNum) => {
-                  const optionText = currentQuestion[`option${optionNum}` as keyof Question] as string;
+                  const optionText = currentQuestion[`option${optionNum}` as keyof QuestionPublic] as string;
                   const isSelected = selectedOption === optionNum;
-                  const isCorrect = currentQuestion.correct_option === optionNum;
+                  const isCorrectOption = currentAnswer?.correct_option === optionNum;
                   const showResult = showAnswer;
 
                   return (
                     <button
                       key={optionNum}
                       onClick={() => handleSelectOption(optionNum)}
-                      disabled={showAnswer}
+                      disabled={showAnswer || checkAnswerMutation.isPending}
                       className={cn(
                         'quiz-option w-full text-left',
                         isSelected && !showResult && 'quiz-option-selected',
-                        showResult && isCorrect && 'quiz-option-correct',
-                        showResult && isSelected && !isCorrect && 'quiz-option-incorrect',
+                        showResult && isCorrectOption && 'quiz-option-correct',
+                        showResult && isSelected && !isCorrectOption && 'quiz-option-incorrect',
                         showResult && 'quiz-option-disabled'
                       )}
                     >
@@ -296,26 +340,26 @@ const Practice = () => {
                         className={cn(
                           'flex h-8 w-8 items-center justify-center rounded-lg border-2 text-sm font-semibold shrink-0',
                           isSelected && !showResult && 'border-primary bg-primary text-primary-foreground',
-                          showResult && isCorrect && 'border-success bg-success text-success-foreground',
-                          showResult && isSelected && !isCorrect && 'border-destructive bg-destructive text-destructive-foreground',
+                          showResult && isCorrectOption && 'border-success bg-success text-success-foreground',
+                          showResult && isSelected && !isCorrectOption && 'border-destructive bg-destructive text-destructive-foreground',
                           !isSelected && !showResult && 'border-border'
                         )}
                       >
                         {optionNum}
                       </span>
                       <span className="flex-1">{optionText}</span>
-                      {showResult && isCorrect && <CheckCircle2 className="h-5 w-5 text-success shrink-0" />}
-                      {showResult && isSelected && !isCorrect && <XCircle className="h-5 w-5 text-destructive shrink-0" />}
+                      {showResult && isCorrectOption && <CheckCircle2 className="h-5 w-5 text-success shrink-0" />}
+                      {showResult && isSelected && !isCorrectOption && <XCircle className="h-5 w-5 text-destructive shrink-0" />}
                     </button>
                   );
                 })}
               </div>
 
               {/* Explanation */}
-              {showAnswer && currentQuestion.explanation && (
+              {showAnswer && currentAnswer?.explanation && (
                 <div className="glass-card rounded-2xl p-6 mb-8 border-l-4 border-primary animate-fade-in">
                   <h4 className="font-semibold mb-2">Explanation</h4>
-                  <p className="text-muted-foreground">{currentQuestion.explanation}</p>
+                  <p className="text-muted-foreground">{currentAnswer.explanation}</p>
                 </div>
               )}
 
@@ -334,9 +378,16 @@ const Practice = () => {
                   <Button
                     variant="hero"
                     onClick={handleSubmitAnswer}
-                    disabled={selectedOption === null}
+                    disabled={selectedOption === null || checkAnswerMutation.isPending}
                   >
-                    Submit Answer
+                    {checkAnswerMutation.isPending ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Checking...
+                      </>
+                    ) : (
+                      'Submit Answer'
+                    )}
                   </Button>
                 ) : (
                   <Button
