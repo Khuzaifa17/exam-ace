@@ -1,4 +1,5 @@
 import { BookOpen, FileText, Users, CreditCard, TrendingUp, Clock } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { AdminLayout } from './AdminLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useQuery } from '@tanstack/react-query';
@@ -145,8 +146,8 @@ interface ActionCardProps {
 }
 
 const ActionCard = ({ href, icon: Icon, title, description }: ActionCardProps) => (
-  <a
-    href={href}
+  <Link
+    to={href}
     className="flex items-center gap-4 p-4 rounded-xl border-2 border-border hover:border-primary/30 transition-colors group"
   >
     <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary transition-colors">
@@ -156,7 +157,7 @@ const ActionCard = ({ href, icon: Icon, title, description }: ActionCardProps) =
       <div className="font-medium group-hover:text-primary transition-colors">{title}</div>
       <div className="text-sm text-muted-foreground">{description}</div>
     </div>
-  </a>
+  </Link>
 );
 
 export default AdminOverview;

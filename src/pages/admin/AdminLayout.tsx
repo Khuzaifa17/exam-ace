@@ -16,6 +16,7 @@ const navItems = [
   { href: '/admin/questions', icon: FileText, label: 'Questions', exact: true },
   { href: '/admin/import', icon: Upload, label: 'Import', exact: true },
   { href: '/admin/payments', icon: CreditCard, label: 'Payments', exact: true },
+  { href: '/admin/users', icon: Users, label: 'Users', exact: true },
 ];
 
 export const AdminLayout = ({ children }: AdminLayoutProps) => {
