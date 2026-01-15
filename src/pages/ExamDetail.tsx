@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { ChevronRight, BookOpen, Clock, Trophy, Play, Lock, FolderOpen, FileText, ChevronDown } from 'lucide-react';
+import { ChevronRight, BookOpen, Clock, Trophy, Play, Lock, FolderOpen, FileText, ChevronDown, AlertCircle } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -10,6 +10,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
+import { useExamAccess } from '@/hooks/useExamAccess';
 
 interface ContentNode {
   id: string;
@@ -59,25 +60,8 @@ const ExamDetail = () => {
     enabled: !!exam?.id,
   });
 
-  // Check subscription status
-  const { data: hasAccess } = useQuery({
-    queryKey: ['subscription', exam?.id, user?.id],
-    queryFn: async () => {
-      if (!exam?.id || !user?.id) return false;
-      
-      const { data, error } = await supabase
-        .from('subscriptions')
-        .select('id')
-        .eq('exam_id', exam.id)
-        .eq('user_id', user.id)
-        .eq('is_active', true)
-        .gte('expires_at', new Date().toISOString())
-        .maybeSingle();
-      
-      return !!data;
-    },
-    enabled: !!exam?.id && !!user?.id,
-  });
+  // Check subscription and demo status
+  const { hasSubscription, demoCompleted, demoQuestionsLimit, canAccess } = useExamAccess(exam?.id || null);
 
   // Build tree structure
   const buildTree = (nodes: ContentNode[]): ContentNode[] => {
@@ -164,8 +148,10 @@ const ExamDetail = () => {
         <div className="mb-10">
           <div className="flex flex-wrap items-center gap-3 mb-4">
             <h1 className="font-display text-3xl md:text-4xl font-bold">{exam.title}</h1>
-            {hasAccess ? (
+            {hasSubscription ? (
               <Badge variant="default" className="bg-success">Full Access</Badge>
+            ) : demoCompleted ? (
+              <Badge variant="destructive">Demo Expired</Badge>
             ) : (
               <Badge variant="secondary">Demo Mode</Badge>
             )}
@@ -260,14 +246,26 @@ const ExamDetail = () => {
             </div>
 
             {/* Access Card */}
-            {!hasAccess && (
-              <div className="glass-card rounded-2xl p-6 border-2 border-secondary/30">
+            {!hasSubscription && (
+              <div className={cn(
+                "glass-card rounded-2xl p-6 border-2",
+                demoCompleted ? "border-destructive/50" : "border-secondary/30"
+              )}>
                 <div className="flex items-center gap-2 mb-4">
-                  <Lock className="h-5 w-5 text-secondary" />
-                  <h3 className="font-display text-lg font-semibold">Unlock Full Access</h3>
+                  {demoCompleted ? (
+                    <AlertCircle className="h-5 w-5 text-destructive" />
+                  ) : (
+                    <Lock className="h-5 w-5 text-secondary" />
+                  )}
+                  <h3 className="font-display text-lg font-semibold">
+                    {demoCompleted ? 'Demo Completed' : 'Unlock Full Access'}
+                  </h3>
                 </div>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Get unlimited access to all {exam.title} questions and mock tests.
+                  {demoCompleted 
+                    ? 'You have completed your one-time free demo. Subscribe to continue practicing.'
+                    : `Get unlimited access to all ${exam.title} questions and mock tests.`
+                  }
                 </p>
                 <ul className="text-sm space-y-2 mb-6">
                   <li className="flex items-center gap-2">
@@ -285,20 +283,23 @@ const ExamDetail = () => {
                 </ul>
                 <Button variant="gold" size="lg" className="w-full" asChild>
                   <Link to={`/payments?exam=${exam.id}`}>
-                    Unlock Now
+                    {demoCompleted ? 'Subscribe Now' : 'Unlock Now'}
                   </Link>
                 </Button>
               </div>
             )}
 
-            {/* Demo Info */}
-            <div className="text-sm text-muted-foreground bg-muted/50 rounded-xl p-4">
-              <p className="font-medium mb-1">Demo Mode Limits:</p>
-              <ul className="space-y-1">
-                <li>• {exam.demo_questions_limit} questions per practice</li>
-                <li>• {exam.demo_attempts_per_day} attempts per day</li>
-              </ul>
-            </div>
+            {/* Demo Info - only show if not subscribed and demo not completed */}
+            {!hasSubscription && !demoCompleted && (
+              <div className="text-sm text-muted-foreground bg-muted/50 rounded-xl p-4">
+                <p className="font-medium mb-1">One-Time Demo:</p>
+                <ul className="space-y-1">
+                  <li>• {demoQuestionsLimit || exam.demo_questions_limit} questions only</li>
+                  <li>• Practice OR Mock Test (one time only)</li>
+                  <li>• Subscribe after demo for unlimited access</li>
+                </ul>
+              </div>
+            )}
           </div>
         </div>
       </div>

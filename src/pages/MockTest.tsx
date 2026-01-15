@@ -8,6 +8,8 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
+import { useExamAccess } from '@/hooks/useExamAccess';
+import { SubscriptionRequired } from '@/components/SubscriptionRequired';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -43,8 +45,14 @@ const MockTest = () => {
   const { user } = useAuth();
 
   const examId = searchParams.get('exam');
-  const questionCount = parseInt(searchParams.get('count') || '20');
+  const requestedCount = parseInt(searchParams.get('count') || '20');
   const timeLimit = parseInt(searchParams.get('time') || '30'); // in minutes
+
+  // Check access rights
+  const { hasSubscription, demoCompleted, demoQuestionsLimit, canAccess, isLoading: accessLoading, markDemoComplete } = useExamAccess(examId);
+
+  // Determine question count based on subscription status
+  const questionCount = hasSubscription ? requestedCount : demoQuestionsLimit;
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedOptions, setSelectedOptions] = useState<Record<number, number>>({});
@@ -82,7 +90,7 @@ const MockTest = () => {
       const shuffled = (data as QuestionPublic[]).sort(() => Math.random() - 0.5);
       return shuffled.slice(0, questionCount);
     },
-    enabled: !!examId,
+    enabled: !!examId && canAccess,
   });
 
   // Timer
@@ -132,7 +140,12 @@ const MockTest = () => {
     setResults(allResults);
     setTestCompleted(true);
     setIsSubmitting(false);
-  }, [questions, selectedOptions, isSubmitting]);
+    
+    // Mark demo as complete for non-subscribers
+    if (!hasSubscription) {
+      markDemoComplete();
+    }
+  }, [questions, selectedOptions, isSubmitting, hasSubscription, markDemoComplete]);
 
   const handleSelectOption = (option: number) => {
     if (testCompleted) return;
@@ -188,6 +201,22 @@ const MockTest = () => {
   if (!user) {
     navigate('/login');
     return null;
+  }
+
+  // Show loading while checking access
+  if (accessLoading) {
+    return (
+      <Layout hideFooter>
+        <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </Layout>
+    );
+  }
+
+  // Show subscription required if demo completed and no subscription
+  if (!canAccess) {
+    return <SubscriptionRequired examId={examId} />;
   }
 
   const currentQuestion = questions?.[currentIndex];
