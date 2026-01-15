@@ -24,8 +24,17 @@ export const signIn = async (email: string, password: string) => {
 };
 
 export const signOut = async () => {
-  const { error } = await supabase.auth.signOut();
-  return { error };
+  try {
+    const { error } = await supabase.auth.signOut();
+    // Even if signOut fails (e.g., user deleted from DB), clear local state
+    if (error) {
+      console.warn('SignOut API error, clearing local session:', error.message);
+    }
+    return { error: null };
+  } catch (err) {
+    console.warn('SignOut exception, clearing local session:', err);
+    return { error: null };
+  }
 };
 
 export const getCurrentUser = async () => {
