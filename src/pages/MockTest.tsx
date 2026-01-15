@@ -10,6 +10,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { useExamAccess } from '@/hooks/useExamAccess';
 import { SubscriptionRequired } from '@/components/SubscriptionRequired';
+import { DemoResultsScreen } from '@/components/DemoResultsScreen';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -228,6 +229,19 @@ const MockTest = () => {
     const totalAnswered = Object.keys(selectedOptions).length;
     const accuracy = totalAnswered > 0 ? Math.round((correctCount / totalAnswered) * 100) : 0;
 
+    // For demo users, show demo results screen with subscription CTA
+    if (!hasSubscription) {
+      return (
+        <DemoResultsScreen
+          examId={examId}
+          correctCount={correctCount}
+          totalAnswered={totalAnswered}
+          totalQuestions={questions?.length || 0}
+        />
+      );
+    }
+
+    // For subscribers, show regular results
     return (
       <Layout hideFooter>
         <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4">
