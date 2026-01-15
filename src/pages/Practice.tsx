@@ -8,6 +8,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
+import { useExamAccess } from '@/hooks/useExamAccess';
+import { SubscriptionRequired } from '@/components/SubscriptionRequired';
 
 interface QuestionPublic {
   id: string;
@@ -36,15 +38,21 @@ const Practice = () => {
   const examId = searchParams.get('exam');
   const nodeId = searchParams.get('node');
 
+  // Check access rights
+  const { hasSubscription, demoCompleted, demoQuestionsLimit, canAccess, isLoading: accessLoading, markDemoComplete } = useExamAccess(examId);
+
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [showAnswer, setShowAnswer] = useState(false);
   const [currentAnswer, setCurrentAnswer] = useState<AnswerResult | null>(null);
   const [answers, setAnswers] = useState<Record<string, { selected: number; correct: boolean; correctOption: number }>>({});
 
+  // Determine question limit based on subscription status
+  const questionLimit = hasSubscription ? 50 : demoQuestionsLimit;
+
   // Fetch questions from the SECURE VIEW (no correct_option exposed)
   const { data: questions, isLoading } = useQuery({
-    queryKey: ['practice-questions', examId, nodeId],
+    queryKey: ['practice-questions', examId, nodeId, questionLimit],
     queryFn: async () => {
       if (!examId) return [];
 
@@ -64,7 +72,7 @@ const Practice = () => {
         .from('questions_public')
         .select('*')
         .in('content_node_id', nodeIds)
-        .limit(20);
+        .limit(questionLimit);
 
       if (nodeId) {
         query = query.eq('content_node_id', nodeId);
@@ -76,7 +84,7 @@ const Practice = () => {
       // Shuffle questions
       return (data as QuestionPublic[]).sort(() => Math.random() - 0.5);
     },
-    enabled: !!examId,
+    enabled: !!examId && canAccess,
   });
 
   // Fetch bookmarks
@@ -172,6 +180,9 @@ const Practice = () => {
       setSelectedOption(null);
       setShowAnswer(false);
       setCurrentAnswer(null);
+    } else if (!hasSubscription && currentIndex === questions.length - 1) {
+      // Demo completed - mark it and show subscription prompt
+      markDemoComplete();
     }
   };
 
@@ -221,6 +232,22 @@ const Practice = () => {
   if (!user) {
     navigate('/login');
     return null;
+  }
+
+  // Show loading while checking access
+  if (accessLoading) {
+    return (
+      <Layout hideFooter>
+        <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </Layout>
+    );
+  }
+
+  // Show subscription required if demo completed and no subscription
+  if (!canAccess) {
+    return <SubscriptionRequired examId={examId} />;
   }
 
   const correctCount = Object.values(answers).filter((a) => a.correct).length;

@@ -101,6 +101,44 @@ export type Database = {
           },
         ]
       }
+      demo_usage: {
+        Row: {
+          created_at: string
+          demo_completed: boolean
+          exam_id: string
+          id: string
+          questions_attempted: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          demo_completed?: boolean
+          exam_id: string
+          id?: string
+          questions_attempted?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          demo_completed?: boolean
+          exam_id?: string
+          id?: string
+          questions_attempted?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "demo_usage_exam_id_fkey"
+            columns: ["exam_id"]
+            isOneToOne: false
+            referencedRelation: "exams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       exams: {
         Row: {
           created_at: string
