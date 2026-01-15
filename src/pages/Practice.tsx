@@ -10,6 +10,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { useExamAccess } from '@/hooks/useExamAccess';
 import { SubscriptionRequired } from '@/components/SubscriptionRequired';
+import { DemoResultsScreen } from '@/components/DemoResultsScreen';
 
 interface QuestionPublic {
   id: string;
@@ -46,6 +47,7 @@ const Practice = () => {
   const [showAnswer, setShowAnswer] = useState(false);
   const [currentAnswer, setCurrentAnswer] = useState<AnswerResult | null>(null);
   const [answers, setAnswers] = useState<Record<string, { selected: number; correct: boolean; correctOption: number }>>({});
+  const [showDemoResults, setShowDemoResults] = useState(false);
 
   // Determine question limit based on subscription status
   const questionLimit = hasSubscription ? 50 : demoQuestionsLimit;
@@ -181,8 +183,9 @@ const Practice = () => {
       setShowAnswer(false);
       setCurrentAnswer(null);
     } else if (!hasSubscription && currentIndex === questions.length - 1) {
-      // Demo completed - mark it and show subscription prompt
+      // Demo completed - mark it and show results with subscription CTA
       markDemoComplete();
+      setShowDemoResults(true);
     }
   };
 
@@ -252,6 +255,18 @@ const Practice = () => {
 
   const correctCount = Object.values(answers).filter((a) => a.correct).length;
   const totalAnswered = Object.keys(answers).length;
+
+  // Show demo results screen after completing demo questions
+  if (showDemoResults) {
+    return (
+      <DemoResultsScreen
+        examId={examId}
+        correctCount={correctCount}
+        totalAnswered={totalAnswered}
+        totalQuestions={questions?.length || 0}
+      />
+    );
+  }
 
   return (
     <Layout hideFooter>
@@ -420,10 +435,15 @@ const Practice = () => {
                   <Button
                     variant="hero"
                     onClick={handleNext}
-                    disabled={currentIndex === questions.length - 1}
                   >
-                    Next Question
-                    <ChevronRight className="h-4 w-4" />
+                    {currentIndex === questions.length - 1 ? (
+                      hasSubscription ? 'Finish' : 'View Results'
+                    ) : (
+                      <>
+                        Next Question
+                        <ChevronRight className="h-4 w-4" />
+                      </>
+                    )}
                   </Button>
                 )}
               </div>
