@@ -37,6 +37,7 @@ interface UserProfile {
   id: string;
   user_id: string;
   full_name: string | null;
+  email: string | null;
   avatar_url: string | null;
   created_at: string;
 }
@@ -209,6 +210,7 @@ const AdminUsers = () => {
 
   const filteredProfiles = profiles?.filter(profile =>
     profile.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    profile.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     profile.user_id.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
@@ -321,6 +323,9 @@ const AdminUsers = () => {
                                 {profile.full_name || 'Unnamed User'}
                               </div>
                               <div className="text-sm text-muted-foreground">
+                                {profile.email || 'No email'}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
                                 Joined {new Date(profile.created_at).toLocaleDateString()}
                               </div>
                             </div>
