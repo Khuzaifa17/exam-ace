@@ -1,5 +1,5 @@
-import { Link } from 'react-router-dom';
-import { BookOpen, Clock, Trophy, Target, TrendingUp, BookmarkIcon, Calendar, ArrowRight } from 'lucide-react';
+import { Link, Navigate } from 'react-router-dom';
+import { BookOpen, Clock, Trophy, Target, TrendingUp, BookmarkIcon, Calendar, ArrowRight, Loader2 } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,7 +10,22 @@ import { supabase } from '@/integrations/supabase/client';
 import { Skeleton } from '@/components/ui/skeleton';
 
 const Dashboard = () => {
-  const { user } = useAuth();
+  const { user, isAdmin, loading } = useAuth();
+
+  // Admin users should only see admin panel
+  if (loading) {
+    return (
+      <Layout>
+        <div className="min-h-[60vh] flex items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </Layout>
+    );
+  }
+
+  if (isAdmin) {
+    return <Navigate to="/admin" replace />;
+  }
 
   // Fetch user profile
   const { data: profile } = useQuery({

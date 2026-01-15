@@ -49,6 +49,7 @@ interface ContentNode {
   title: string;
   description: string | null;
   order_index: number;
+  demo_questions_limit: number;
   children?: ContentNode[];
   question_count?: number;
 }
@@ -75,6 +76,7 @@ const AdminExamStructure = () => {
     title: '',
     description: '',
     node_type: 'TRACK' as NodeType,
+    demo_questions_limit: 10,
   });
 
   const [questionFormData, setQuestionFormData] = useState({
@@ -139,7 +141,7 @@ const AdminExamStructure = () => {
 
   // Create node mutation
   const createNode = useMutation({
-    mutationFn: async (data: { title: string; description: string; node_type: NodeType; parent_id: string | null }) => {
+    mutationFn: async (data: { title: string; description: string; node_type: NodeType; parent_id: string | null; demo_questions_limit: number }) => {
       // Get max order_index for siblings
       const { data: siblings } = await supabase
         .from('content_nodes')
@@ -158,6 +160,7 @@ const AdminExamStructure = () => {
         title: data.title,
         description: data.description || null,
         order_index: nextOrderIndex,
+        demo_questions_limit: data.demo_questions_limit || 10,
       });
       if (error) throw error;
     },
@@ -174,13 +177,14 @@ const AdminExamStructure = () => {
 
   // Update node mutation
   const updateNode = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: { title: string; description: string; node_type: NodeType } }) => {
+    mutationFn: async ({ id, data }: { id: string; data: { title: string; description: string; node_type: NodeType; demo_questions_limit: number } }) => {
       const { error } = await supabase
         .from('content_nodes')
         .update({
           title: data.title,
           description: data.description || null,
           node_type: data.node_type,
+          demo_questions_limit: data.demo_questions_limit,
         })
         .eq('id', id);
       if (error) throw error;
@@ -275,7 +279,7 @@ const AdminExamStructure = () => {
   });
 
   const resetForm = () => {
-    setFormData({ title: '', description: '', node_type: 'TRACK' });
+    setFormData({ title: '', description: '', node_type: 'TRACK', demo_questions_limit: 10 });
     setParentNodeId(null);
   };
 
@@ -300,6 +304,7 @@ const AdminExamStructure = () => {
       title: '',
       description: '',
       node_type: suggestedType || 'TRACK',
+      demo_questions_limit: 10,
     });
     setIsCreateOpen(true);
   };
@@ -309,6 +314,7 @@ const AdminExamStructure = () => {
       title: node.title,
       description: node.description || '',
       node_type: node.node_type,
+      demo_questions_limit: node.demo_questions_limit || 10,
     });
     setEditingNode(node);
   };
@@ -504,6 +510,24 @@ const AdminExamStructure = () => {
                   rows={2}
                 />
               </div>
+
+              {formData.node_type === 'CHAPTER' && (
+                <div className="space-y-2">
+                  <Label htmlFor="demo_limit">Demo Questions Limit</Label>
+                  <Input
+                    id="demo_limit"
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={formData.demo_questions_limit}
+                    onChange={(e) => setFormData({ ...formData, demo_questions_limit: parseInt(e.target.value) || 10 })}
+                    placeholder="10"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Number of free demo questions for non-subscribers (default: 10)
+                  </p>
+                </div>
+              )}
 
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => {
