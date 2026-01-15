@@ -13,6 +13,7 @@ import Exams from "./pages/Exams";
 import ExamDetail from "./pages/ExamDetail";
 import Practice from "./pages/Practice";
 import Dashboard from "./pages/Dashboard";
+import Profile from "./pages/Profile";
 import Payments from "./pages/Payments";
 import NotFound from "./pages/NotFound";
 
@@ -45,6 +46,7 @@ const App = () => (
             {/* Protected Routes */}
             <Route path="/practice" element={<Practice />} />
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/profile" element={<Profile />} />
             <Route path="/payments" element={<Payments />} />
             
             {/* Admin Routes */}
