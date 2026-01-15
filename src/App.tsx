@@ -12,6 +12,7 @@ import Register from "./pages/Register";
 import Exams from "./pages/Exams";
 import ExamDetail from "./pages/ExamDetail";
 import Practice from "./pages/Practice";
+import MockTest from "./pages/MockTest";
 import Dashboard from "./pages/Dashboard";
 import Profile from "./pages/Profile";
 import Payments from "./pages/Payments";
@@ -45,6 +46,7 @@ const App = () => (
             
             {/* Protected Routes */}
             <Route path="/practice" element={<Practice />} />
+            <Route path="/mock" element={<MockTest />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/payments" element={<Payments />} />
