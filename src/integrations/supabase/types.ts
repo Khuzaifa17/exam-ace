@@ -53,6 +53,7 @@ export type Database = {
       content_nodes: {
         Row: {
           created_at: string
+          demo_questions_limit: number
           description: string | null
           exam_id: string
           id: string
@@ -64,6 +65,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          demo_questions_limit?: number
           description?: string | null
           exam_id: string
           id?: string
@@ -75,6 +77,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          demo_questions_limit?: number
           description?: string | null
           exam_id?: string
           id?: string
