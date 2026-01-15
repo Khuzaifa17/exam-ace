@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Users, Shield, User, Search } from 'lucide-react';
+import { Users, Shield, User, Search, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
 import { AdminLayout } from './AdminLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -16,6 +16,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 
 interface UserProfile {
   id: string;
@@ -30,8 +46,18 @@ interface UserRole {
   role: 'admin' | 'user';
 }
 
+interface DemoUsage {
+  id: string;
+  user_id: string;
+  exam_id: string;
+  questions_attempted: number;
+  demo_completed: boolean;
+  exam_title?: string;
+}
+
 const AdminUsers = () => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [expandedUsers, setExpandedUsers] = useState<Set<string>>(new Set());
   const queryClient = useQueryClient();
 
   // Fetch profiles
@@ -58,6 +84,36 @@ const AdminUsers = () => {
 
       if (error) throw error;
       return data as UserRole[];
+    },
+  });
+
+  // Fetch demo usage with exam titles
+  const { data: demoUsage, isLoading: demoLoading } = useQuery({
+    queryKey: ['admin-demo-usage'],
+    queryFn: async () => {
+      const { data: usageData, error: usageError } = await supabase
+        .from('demo_usage')
+        .select('*');
+
+      if (usageError) throw usageError;
+
+      // Fetch exam titles
+      const examIds = [...new Set(usageData.map(d => d.exam_id))];
+      if (examIds.length === 0) return [];
+
+      const { data: exams, error: examsError } = await supabase
+        .from('exams')
+        .select('id, title')
+        .in('id', examIds);
+
+      if (examsError) throw examsError;
+
+      const examMap = new Map(exams.map(e => [e.id, e.title]));
+
+      return usageData.map(usage => ({
+        ...usage,
+        exam_title: examMap.get(usage.exam_id) || 'Unknown Exam',
+      })) as DemoUsage[];
     },
   });
 
@@ -91,11 +147,64 @@ const AdminUsers = () => {
     },
   });
 
-  const isLoading = profilesLoading || rolesLoading;
+  // Reset single demo mutation
+  const resetDemo = useMutation({
+    mutationFn: async ({ userId, examId }: { userId: string; examId: string }) => {
+      const { error } = await supabase
+        .from('demo_usage')
+        .delete()
+        .eq('user_id', userId)
+        .eq('exam_id', examId);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-demo-usage'] });
+      toast.success('Demo reset successfully');
+    },
+    onError: () => {
+      toast.error('Failed to reset demo');
+    },
+  });
+
+  // Reset all demos for a user
+  const resetAllDemos = useMutation({
+    mutationFn: async (userId: string) => {
+      const { error } = await supabase
+        .from('demo_usage')
+        .delete()
+        .eq('user_id', userId);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-demo-usage'] });
+      toast.success('All demos reset successfully');
+    },
+    onError: () => {
+      toast.error('Failed to reset demos');
+    },
+  });
+
+  const isLoading = profilesLoading || rolesLoading || demoLoading;
 
   const getUserRole = (userId: string): 'admin' | 'user' => {
     const role = userRoles?.find(r => r.user_id === userId);
     return role?.role === 'admin' ? 'admin' : 'user';
+  };
+
+  const getUserDemoUsage = (userId: string): DemoUsage[] => {
+    return demoUsage?.filter(d => d.user_id === userId) || [];
+  };
+
+  const toggleUserExpanded = (userId: string) => {
+    const newExpanded = new Set(expandedUsers);
+    if (newExpanded.has(userId)) {
+      newExpanded.delete(userId);
+    } else {
+      newExpanded.add(userId);
+    }
+    setExpandedUsers(newExpanded);
   };
 
   const filteredProfiles = profiles?.filter(profile =>
@@ -184,53 +293,162 @@ const AdminUsers = () => {
               <div className="space-y-2">
                 {filteredProfiles.map((profile) => {
                   const role = getUserRole(profile.user_id);
-                  return (
-                    <div
-                      key={profile.id}
-                      className="flex items-center justify-between p-4 rounded-lg border border-border hover:border-primary/30 transition-colors"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center">
-                          {profile.avatar_url ? (
-                            <img
-                              src={profile.avatar_url}
-                              alt={profile.full_name || 'User'}
-                              className="h-10 w-10 rounded-full object-cover"
-                            />
-                          ) : (
-                            <User className="h-5 w-5 text-muted-foreground" />
-                          )}
-                        </div>
-                        <div>
-                          <div className="font-medium">
-                            {profile.full_name || 'Unnamed User'}
-                          </div>
-                          <div className="text-sm text-muted-foreground">
-                            Joined {new Date(profile.created_at).toLocaleDateString()}
-                          </div>
-                        </div>
-                      </div>
+                  const userDemos = getUserDemoUsage(profile.user_id);
+                  const isExpanded = expandedUsers.has(profile.user_id);
 
-                      <div className="flex items-center gap-4">
-                        <Badge variant={role === 'admin' ? 'default' : 'secondary'}>
-                          {role === 'admin' ? 'Admin' : 'User'}
-                        </Badge>
-                        <Select
-                          value={role}
-                          onValueChange={(value: 'admin' | 'user') =>
-                            updateRole.mutate({ userId: profile.user_id, newRole: value })
-                          }
-                        >
-                          <SelectTrigger className="w-32">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="user">User</SelectItem>
-                            <SelectItem value="admin">Admin</SelectItem>
-                          </SelectContent>
-                        </Select>
+                  return (
+                    <Collapsible
+                      key={profile.id}
+                      open={isExpanded}
+                      onOpenChange={() => toggleUserExpanded(profile.user_id)}
+                    >
+                      <div className="rounded-lg border border-border hover:border-primary/30 transition-colors">
+                        <div className="flex items-center justify-between p-4">
+                          <div className="flex items-center gap-4">
+                            <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center">
+                              {profile.avatar_url ? (
+                                <img
+                                  src={profile.avatar_url}
+                                  alt={profile.full_name || 'User'}
+                                  className="h-10 w-10 rounded-full object-cover"
+                                />
+                              ) : (
+                                <User className="h-5 w-5 text-muted-foreground" />
+                              )}
+                            </div>
+                            <div>
+                              <div className="font-medium">
+                                {profile.full_name || 'Unnamed User'}
+                              </div>
+                              <div className="text-sm text-muted-foreground">
+                                Joined {new Date(profile.created_at).toLocaleDateString()}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-4">
+                            <Badge variant={role === 'admin' ? 'default' : 'secondary'}>
+                              {role === 'admin' ? 'Admin' : 'User'}
+                            </Badge>
+                            <Select
+                              value={role}
+                              onValueChange={(value: 'admin' | 'user') =>
+                                updateRole.mutate({ userId: profile.user_id, newRole: value })
+                              }
+                            >
+                              <SelectTrigger className="w-32">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="user">User</SelectItem>
+                                <SelectItem value="admin">Admin</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <CollapsibleTrigger asChild>
+                              <Button variant="ghost" size="sm">
+                                {isExpanded ? (
+                                  <ChevronUp className="h-4 w-4" />
+                                ) : (
+                                  <ChevronDown className="h-4 w-4" />
+                                )}
+                                <span className="ml-1 text-xs">
+                                  Demo ({userDemos.length})
+                                </span>
+                              </Button>
+                            </CollapsibleTrigger>
+                          </div>
+                        </div>
+
+                        <CollapsibleContent>
+                          <div className="px-4 pb-4 border-t border-border pt-4">
+                            <div className="flex items-center justify-between mb-3">
+                              <h4 className="text-sm font-medium">Demo Usage</h4>
+                              {userDemos.length > 0 && (
+                                <AlertDialog>
+                                  <AlertDialogTrigger asChild>
+                                    <Button variant="outline" size="sm">
+                                      <RotateCcw className="h-3 w-3 mr-1" />
+                                      Reset All Demos
+                                    </Button>
+                                  </AlertDialogTrigger>
+                                  <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                      <AlertDialogTitle>Reset All Demos?</AlertDialogTitle>
+                                      <AlertDialogDescription>
+                                        یہ action user کے تمام demos reset کر دے گا۔ User دوبارہ تمام exams کے demo attempt کر سکے گا۔
+                                      </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                      <AlertDialogAction
+                                        onClick={() => resetAllDemos.mutate(profile.user_id)}
+                                      >
+                                        Reset All
+                                      </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                  </AlertDialogContent>
+                                </AlertDialog>
+                              )}
+                            </div>
+
+                            {userDemos.length > 0 ? (
+                              <div className="space-y-2">
+                                {userDemos.map((demo) => (
+                                  <div
+                                    key={demo.id}
+                                    className="flex items-center justify-between p-3 bg-muted/50 rounded-lg"
+                                  >
+                                    <div className="flex items-center gap-3">
+                                      <div>
+                                        <div className="font-medium text-sm">{demo.exam_title}</div>
+                                        <div className="text-xs text-muted-foreground">
+                                          Questions: {demo.questions_attempted} | 
+                                          Status: {demo.demo_completed ? (
+                                            <span className="text-destructive">Completed</span>
+                                          ) : (
+                                            <span className="text-success">In Progress</span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <AlertDialog>
+                                      <AlertDialogTrigger asChild>
+                                        <Button variant="ghost" size="sm">
+                                          <RotateCcw className="h-3 w-3" />
+                                        </Button>
+                                      </AlertDialogTrigger>
+                                      <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                          <AlertDialogTitle>Reset Demo?</AlertDialogTitle>
+                                          <AlertDialogDescription>
+                                            یہ action "{demo.exam_title}" کا demo reset کر دے گا۔ User دوبارہ اس exam کا demo attempt کر سکے گا۔
+                                          </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                          <AlertDialogAction
+                                            onClick={() => resetDemo.mutate({ 
+                                              userId: profile.user_id, 
+                                              examId: demo.exam_id 
+                                            })}
+                                          >
+                                            Reset
+                                          </AlertDialogAction>
+                                        </AlertDialogFooter>
+                                      </AlertDialogContent>
+                                    </AlertDialog>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-center py-4 text-sm text-muted-foreground">
+                                No demo usage found
+                              </div>
+                            )}
+                          </div>
+                        </CollapsibleContent>
                       </div>
-                    </div>
+                    </Collapsible>
                   );
                 })}
               </div>
