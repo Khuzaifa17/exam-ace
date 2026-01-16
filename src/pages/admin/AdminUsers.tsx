@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Users, Shield, User, Search, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
+import { Users, Shield, User, Search, RotateCcw, ChevronDown, ChevronUp, Crown } from 'lucide-react';
 import { AdminLayout } from './AdminLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -9,6 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   Select,
   SelectContent,
@@ -32,6 +33,11 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 interface UserProfile {
   id: string;
@@ -44,7 +50,7 @@ interface UserProfile {
 
 interface UserRole {
   user_id: string;
-  role: 'admin' | 'user';
+  role: 'admin' | 'user' | 'owner';
 }
 
 interface DemoUsage {
@@ -60,6 +66,7 @@ const AdminUsers = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedUsers, setExpandedUsers] = useState<Set<string>>(new Set());
   const queryClient = useQueryClient();
+  const { user: currentUser, isOwner: currentUserIsOwner } = useAuth();
 
   // Fetch profiles
   const { data: profiles, isLoading: profilesLoading } = useQuery({
@@ -123,19 +130,24 @@ const AdminUsers = () => {
     mutationFn: async ({ userId, newRole }: { userId: string; newRole: 'admin' | 'user' }) => {
       const existingRole = userRoles?.find(r => r.user_id === userId);
 
+      // Prevent modifying owner
+      if (existingRole?.role === 'owner') {
+        throw new Error('Cannot modify owner role');
+      }
+
       if (newRole === 'user' && existingRole?.role === 'admin') {
-        // Remove admin role
+        // Update to user role
         const { error } = await supabase
           .from('user_roles')
-          .delete()
-          .eq('user_id', userId)
-          .eq('role', 'admin');
+          .update({ role: 'user' })
+          .eq('user_id', userId);
         if (error) throw error;
       } else if (newRole === 'admin' && existingRole?.role !== 'admin') {
-        // Add admin role
+        // Update to admin role
         const { error } = await supabase
           .from('user_roles')
-          .upsert({ user_id: userId, role: 'admin' });
+          .update({ role: 'admin' })
+          .eq('user_id', userId);
         if (error) throw error;
       }
     },
@@ -143,8 +155,8 @@ const AdminUsers = () => {
       queryClient.invalidateQueries({ queryKey: ['admin-user-roles'] });
       toast.success('User role updated');
     },
-    onError: () => {
-      toast.error('Failed to update role');
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to update role');
     },
   });
 
@@ -189,9 +201,33 @@ const AdminUsers = () => {
 
   const isLoading = profilesLoading || rolesLoading || demoLoading;
 
-  const getUserRole = (userId: string): 'admin' | 'user' => {
+  const getUserRole = (userId: string): 'owner' | 'admin' | 'user' => {
     const role = userRoles?.find(r => r.user_id === userId);
-    return role?.role === 'admin' ? 'admin' : 'user';
+    if (role?.role === 'owner') return 'owner';
+    if (role?.role === 'admin') return 'admin';
+    return 'user';
+  };
+
+  // Check if current user can modify target user's role
+  const canModifyRole = (targetRole: 'owner' | 'admin' | 'user'): boolean => {
+    // No one can modify owner
+    if (targetRole === 'owner') return false;
+    // Only owner can modify admins
+    if (targetRole === 'admin') return currentUserIsOwner;
+    // Owner and admins can modify users
+    return true;
+  };
+
+  // Get available role options based on current user's permissions
+  const getAvailableRoles = (targetRole: 'owner' | 'admin' | 'user'): ('admin' | 'user')[] => {
+    if (targetRole === 'owner') return [];
+    if (currentUserIsOwner) {
+      // Owner can set any non-owner role
+      return ['user', 'admin'];
+    }
+    // Admins can only promote to admin, not demote other admins
+    if (targetRole === 'admin') return [];
+    return ['user', 'admin'];
   };
 
   const getUserDemoUsage = (userId: string): DemoUsage[] => {
@@ -214,6 +250,7 @@ const AdminUsers = () => {
     profile.user_id.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const ownerCount = userRoles?.filter(r => r.role === 'owner').length || 0;
   const adminCount = userRoles?.filter(r => r.role === 'admin').length || 0;
   const totalUsers = profiles?.length || 0;
 
@@ -226,7 +263,7 @@ const AdminUsers = () => {
         </div>
 
         {/* Stats */}
-        <div className="grid sm:grid-cols-3 gap-4">
+        <div className="grid sm:grid-cols-4 gap-4">
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center gap-4">
@@ -236,6 +273,19 @@ const AdminUsers = () => {
                 <div>
                   <div className="font-display text-2xl font-bold">{totalUsers}</div>
                   <div className="text-sm text-muted-foreground">Total Users</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="border-secondary/50 bg-gradient-to-br from-secondary/5 to-secondary/10">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-secondary/20 text-secondary">
+                  <Crown className="h-6 w-6" />
+                </div>
+                <div>
+                  <div className="font-display text-2xl font-bold">{ownerCount}</div>
+                  <div className="text-sm text-muted-foreground">Owner</div>
                 </div>
               </div>
             </CardContent>
@@ -260,7 +310,7 @@ const AdminUsers = () => {
                   <User className="h-6 w-6" />
                 </div>
                 <div>
-                  <div className="font-display text-2xl font-bold">{totalUsers - adminCount}</div>
+                  <div className="font-display text-2xl font-bold">{totalUsers - adminCount - ownerCount}</div>
                   <div className="text-sm text-muted-foreground">Regular Users</div>
                 </div>
               </div>
@@ -297,6 +347,9 @@ const AdminUsers = () => {
                   const role = getUserRole(profile.user_id);
                   const userDemos = getUserDemoUsage(profile.user_id);
                   const isExpanded = expandedUsers.has(profile.user_id);
+                  const isCurrentUser = currentUser?.id === profile.user_id;
+                  const canModify = canModifyRole(role) && !isCurrentUser;
+                  const availableRoles = getAvailableRoles(role);
 
                   return (
                     <Collapsible
@@ -304,23 +357,34 @@ const AdminUsers = () => {
                       open={isExpanded}
                       onOpenChange={() => toggleUserExpanded(profile.user_id)}
                     >
-                      <div className="rounded-lg border border-border hover:border-primary/30 transition-colors">
+                      <div className={`rounded-lg border transition-colors ${
+                        role === 'owner' 
+                          ? 'border-secondary/50 bg-gradient-to-r from-secondary/5 to-transparent' 
+                          : 'border-border hover:border-primary/30'
+                      }`}>
                         <div className="flex items-center justify-between p-4">
                           <div className="flex items-center gap-4">
-                            <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center">
+                            <div className={`h-10 w-10 rounded-full flex items-center justify-center ${
+                              role === 'owner' ? 'bg-secondary/20' : 'bg-muted'
+                            }`}>
                               {profile.avatar_url ? (
                                 <img
                                   src={profile.avatar_url}
                                   alt={profile.full_name || 'User'}
                                   className="h-10 w-10 rounded-full object-cover"
                                 />
+                              ) : role === 'owner' ? (
+                                <Crown className="h-5 w-5 text-secondary" />
                               ) : (
                                 <User className="h-5 w-5 text-muted-foreground" />
                               )}
                             </div>
                             <div>
-                              <div className="font-medium">
+                              <div className="font-medium flex items-center gap-2">
                                 {profile.full_name || 'Unnamed User'}
+                                {role === 'owner' && (
+                                  <span className="text-xs text-secondary font-normal">(Protected)</span>
+                                )}
                               </div>
                               <div className="text-sm text-muted-foreground">
                                 {profile.email || 'No email'}
@@ -332,23 +396,57 @@ const AdminUsers = () => {
                           </div>
 
                           <div className="flex items-center gap-4">
-                            <Badge variant={role === 'admin' ? 'default' : 'secondary'}>
-                              {role === 'admin' ? 'Admin' : 'User'}
-                            </Badge>
-                            <Select
-                              value={role}
-                              onValueChange={(value: 'admin' | 'user') =>
-                                updateRole.mutate({ userId: profile.user_id, newRole: value })
-                              }
-                            >
-                              <SelectTrigger className="w-32">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="user">User</SelectItem>
-                                <SelectItem value="admin">Admin</SelectItem>
-                              </SelectContent>
-                            </Select>
+                            {role === 'owner' ? (
+                              <Badge className="bg-gradient-to-r from-secondary to-secondary/80 text-secondary-foreground">
+                                <Crown className="h-3 w-3 mr-1" />
+                                Owner
+                              </Badge>
+                            ) : (
+                              <Badge variant={role === 'admin' ? 'default' : 'secondary'}>
+                                {role === 'admin' ? (
+                                  <>
+                                    <Shield className="h-3 w-3 mr-1" />
+                                    Admin
+                                  </>
+                                ) : 'User'}
+                              </Badge>
+                            )}
+                            
+                            {canModify && availableRoles.length > 0 ? (
+                              <Select
+                                value={role}
+                                onValueChange={(value: 'admin' | 'user') =>
+                                  updateRole.mutate({ userId: profile.user_id, newRole: value })
+                                }
+                              >
+                                <SelectTrigger className="w-32">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {availableRoles.map((r) => (
+                                    <SelectItem key={r} value={r}>
+                                      {r === 'admin' ? 'Admin' : 'User'}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <div className="w-32 h-9 flex items-center justify-center rounded-md border border-dashed border-muted-foreground/30 text-muted-foreground text-sm">
+                                    {role === 'owner' ? 'Protected' : isCurrentUser ? 'You' : 'No access'}
+                                  </div>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  {role === 'owner' 
+                                    ? 'Owner role cannot be modified' 
+                                    : isCurrentUser 
+                                      ? 'You cannot change your own role'
+                                      : 'Only Owner can modify admin roles'}
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
+                            
                             <CollapsibleTrigger asChild>
                               <Button variant="ghost" size="sm">
                                 {isExpanded ? (
