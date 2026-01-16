@@ -7,6 +7,7 @@ interface AuthContextType {
   session: Session | null;
   loading: boolean;
   isAdmin: boolean;
+  isOwner: boolean;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -14,6 +15,7 @@ const AuthContext = createContext<AuthContextType>({
   session: null,
   loading: true,
   isAdmin: false,
+  isOwner: false,
 });
 
 export const useAuth = () => {
@@ -33,6 +35,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isOwner, setIsOwner] = useState(false);
 
   useEffect(() => {
     // Get initial session first
@@ -41,17 +44,18 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       setUser(session?.user ?? null);
       setLoading(false);
       
-      // Defer admin check to not block UI
+      // Defer role check to not block UI
       if (session?.user) {
         setTimeout(() => {
           supabase
             .from('user_roles')
             .select('role')
             .eq('user_id', session.user.id)
-            .eq('role', 'admin')
             .maybeSingle()
             .then(({ data }) => {
-              setIsAdmin(!!data);
+              const role = data?.role;
+              setIsOwner(role === 'owner');
+              setIsAdmin(role === 'admin' || role === 'owner');
             });
         }, 0);
       }
@@ -65,20 +69,22 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         setLoading(false);
         
         if (session?.user) {
-          // Defer admin check to not block navigation
+          // Defer role check to not block navigation
           setTimeout(() => {
             supabase
               .from('user_roles')
               .select('role')
               .eq('user_id', session.user.id)
-              .eq('role', 'admin')
               .maybeSingle()
               .then(({ data }) => {
-                setIsAdmin(!!data);
+                const role = data?.role;
+                setIsOwner(role === 'owner');
+                setIsAdmin(role === 'admin' || role === 'owner');
               });
           }, 0);
         } else {
           setIsAdmin(false);
+          setIsOwner(false);
         }
       }
     );
@@ -89,7 +95,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, isAdmin }}>
+    <AuthContext.Provider value={{ user, session, loading, isAdmin, isOwner }}>
       {children}
     </AuthContext.Provider>
   );
