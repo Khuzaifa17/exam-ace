@@ -1,16 +1,17 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Clock, CheckCircle2, XCircle, Loader2, AlertTriangle } from 'lucide-react';
+import { useSearchParams, useNavigate, Link } from 'react-router-dom';
+import { ChevronLeft, ChevronRight, Clock, CheckCircle2, XCircle, Loader2, AlertTriangle, Trophy, CreditCard, Settings } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { useExamAccess } from '@/hooks/useExamAccess';
 import { SubscriptionRequired } from '@/components/SubscriptionRequired';
-import { DemoResultsScreen } from '@/components/DemoResultsScreen';
+import { Label } from '@/components/ui/label';
+import { Slider } from '@/components/ui/slider';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,6 +22,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface QuestionPublic {
   id: string;
@@ -46,14 +54,17 @@ const MockTest = () => {
   const { user } = useAuth();
 
   const examId = searchParams.get('exam');
-  const requestedCount = parseInt(searchParams.get('count') || '20');
-  const timeLimit = parseInt(searchParams.get('time') || '30'); // in minutes
 
   // Check access rights
   const { hasSubscription, demoCompleted, demoQuestionsLimit, canAccess, isLoading: accessLoading, markDemoComplete } = useExamAccess(examId);
 
+  // User-configurable settings
+  const [selectedQuestionCount, setSelectedQuestionCount] = useState(20);
+  const [selectedTimeLimit, setSelectedTimeLimit] = useState(30); // in minutes
+
   // Determine question count based on subscription status
-  const questionCount = hasSubscription ? requestedCount : demoQuestionsLimit;
+  const questionCount = hasSubscription ? selectedQuestionCount : demoQuestionsLimit;
+  const timeLimit = hasSubscription ? selectedTimeLimit : Math.min(selectedTimeLimit, 15); // Demo max 15 mins
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedOptions, setSelectedOptions] = useState<Record<number, number>>({});
@@ -64,8 +75,35 @@ const MockTest = () => {
   const [showExitDialog, setShowExitDialog] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Fetch questions
-  const { data: questions, isLoading } = useQuery({
+  // Fetch total available questions count
+  const { data: totalQuestionsAvailable, isLoading: countLoading } = useQuery({
+    queryKey: ['questions-count', examId],
+    queryFn: async () => {
+      if (!examId) return 0;
+
+      const { data: nodes, error: nodesError } = await supabase
+        .from('content_nodes')
+        .select('id')
+        .eq('exam_id', examId);
+
+      if (nodesError) throw nodesError;
+      if (!nodes || nodes.length === 0) return 0;
+
+      const nodeIds = nodes.map(n => n.id);
+
+      const { count, error } = await supabase
+        .from('questions_public')
+        .select('id', { count: 'exact', head: true })
+        .in('content_node_id', nodeIds);
+
+      if (error) throw error;
+      return count || 0;
+    },
+    enabled: !!examId,
+  });
+
+  // Fetch questions only when test starts
+  const { data: questions, isLoading, refetch: fetchQuestions } = useQuery({
     queryKey: ['mock-questions', examId, questionCount],
     queryFn: async () => {
       if (!examId) return [];
@@ -91,7 +129,7 @@ const MockTest = () => {
       const shuffled = (data as QuestionPublic[]).sort(() => Math.random() - 0.5);
       return shuffled.slice(0, questionCount);
     },
-    enabled: !!examId && canAccess,
+    enabled: false, // Don't fetch automatically
   });
 
   // Timer
@@ -166,7 +204,9 @@ const MockTest = () => {
     }
   };
 
-  const handleStartTest = () => {
+  const handleStartTest = async () => {
+    setTimeRemaining(timeLimit * 60);
+    await fetchQuestions();
     setTestStarted(true);
   };
 
@@ -224,69 +264,140 @@ const MockTest = () => {
   const answeredCount = Object.keys(selectedOptions).length;
   const correctCount = Object.values(results).filter(r => r.is_correct).length;
 
-  // Results Screen
+  // Results Screen - Split Layout
   if (testCompleted) {
     const totalAnswered = Object.keys(selectedOptions).length;
     const accuracy = totalAnswered > 0 ? Math.round((correctCount / totalAnswered) * 100) : 0;
+    const unanswered = (questions?.length || 0) - totalAnswered;
+    const timeTaken = (timeLimit * 60) - timeRemaining;
+    const minsUsed = Math.floor(timeTaken / 60);
+    const secsUsed = timeTaken % 60;
 
-    // For demo users, show demo results screen with subscription CTA
-    if (!hasSubscription) {
-      return (
-        <DemoResultsScreen
-          examId={examId}
-          correctCount={correctCount}
-          totalAnswered={totalAnswered}
-          totalQuestions={questions?.length || 0}
-        />
-      );
-    }
-
-    // For subscribers, show regular results
     return (
       <Layout hideFooter>
         <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4">
-          <div className="glass-card rounded-3xl p-8 max-w-lg w-full text-center">
-            <div className="mb-6">
-              {accuracy >= 70 ? (
-                <CheckCircle2 className="h-16 w-16 text-success mx-auto" />
-              ) : accuracy >= 50 ? (
-                <AlertTriangle className="h-16 w-16 text-warning mx-auto" />
-              ) : (
-                <XCircle className="h-16 w-16 text-destructive mx-auto" />
-              )}
-            </div>
+          <div className="w-full max-w-5xl">
+            <div className="grid md:grid-cols-2 gap-6">
+              {/* Left Side - Results */}
+              <div className="glass-card rounded-3xl p-8">
+                {/* Result Icon */}
+                <div className="text-center mb-6">
+                  {accuracy >= 70 ? (
+                    <div className="flex h-20 w-20 items-center justify-center rounded-full bg-success/20 mx-auto">
+                      <Trophy className="h-10 w-10 text-success" />
+                    </div>
+                  ) : accuracy >= 50 ? (
+                    <div className="flex h-20 w-20 items-center justify-center rounded-full bg-warning/20 mx-auto">
+                      <AlertTriangle className="h-10 w-10 text-warning" />
+                    </div>
+                  ) : (
+                    <div className="flex h-20 w-20 items-center justify-center rounded-full bg-destructive/20 mx-auto">
+                      <XCircle className="h-10 w-10 text-destructive" />
+                    </div>
+                  )}
+                </div>
 
-            <h1 className="font-display text-3xl font-bold mb-2">Test Complete!</h1>
-            <p className="text-muted-foreground mb-8">Here's how you performed</p>
+                <h1 className="font-display text-3xl font-bold mb-2 text-center">
+                  {hasSubscription ? 'Test Complete!' : 'Demo Complete!'}
+                </h1>
+                <p className="text-muted-foreground mb-6 text-center">Here's your performance</p>
 
-            <div className="grid grid-cols-3 gap-4 mb-8">
-              <div className="bg-muted/50 rounded-xl p-4">
-                <div className="text-2xl font-bold text-success">{correctCount}</div>
-                <div className="text-sm text-muted-foreground">Correct</div>
+                {/* Results Grid */}
+                <div className="grid grid-cols-2 gap-4 mb-6">
+                  <div className="bg-muted/50 rounded-xl p-4 text-center">
+                    <div className="text-2xl font-bold text-success">{correctCount}</div>
+                    <div className="text-sm text-muted-foreground">Correct</div>
+                  </div>
+                  <div className="bg-muted/50 rounded-xl p-4 text-center">
+                    <div className="text-2xl font-bold text-destructive">{totalAnswered - correctCount}</div>
+                    <div className="text-sm text-muted-foreground">Incorrect</div>
+                  </div>
+                  <div className="bg-muted/50 rounded-xl p-4 text-center">
+                    <div className="text-2xl font-bold">{accuracy}%</div>
+                    <div className="text-sm text-muted-foreground">Accuracy</div>
+                  </div>
+                  <div className="bg-muted/50 rounded-xl p-4 text-center">
+                    <div className="text-2xl font-bold">{minsUsed}:{secsUsed.toString().padStart(2, '0')}</div>
+                    <div className="text-sm text-muted-foreground">Time Used</div>
+                  </div>
+                </div>
+
+                {unanswered > 0 && (
+                  <p className="text-sm text-muted-foreground mb-6 text-center">
+                    {unanswered} question{unanswered > 1 ? 's were' : ' was'} not answered
+                  </p>
+                )}
+
+                <div className="flex gap-4 justify-center">
+                  <Button variant="outline" onClick={() => navigate('/exams')}>
+                    Back to Exams
+                  </Button>
+                  <Button variant="hero" onClick={() => window.location.reload()}>
+                    Try Again
+                  </Button>
+                </div>
               </div>
-              <div className="bg-muted/50 rounded-xl p-4">
-                <div className="text-2xl font-bold text-destructive">{totalAnswered - correctCount}</div>
-                <div className="text-sm text-muted-foreground">Incorrect</div>
-              </div>
-              <div className="bg-muted/50 rounded-xl p-4">
-                <div className="text-2xl font-bold">{accuracy}%</div>
-                <div className="text-sm text-muted-foreground">Accuracy</div>
-              </div>
-            </div>
 
-            <div className="text-sm text-muted-foreground mb-8">
-              {questions?.length && questions.length - totalAnswered > 0 && (
-                <span>{questions.length - totalAnswered} questions were not answered</span>
-              )}
-            </div>
+              {/* Right Side - Subscription CTA */}
+              <div className="glass-card rounded-3xl p-8">
+                <div className="h-full flex flex-col">
+                  <div className="text-center mb-6">
+                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-secondary/20 mx-auto mb-4">
+                      <CreditCard className="h-8 w-8 text-secondary" />
+                    </div>
+                    <h2 className="font-display text-2xl font-bold mb-2">
+                      {hasSubscription ? 'You\'re a Pro!' : 'Upgrade to Pro'}
+                    </h2>
+                    <p className="text-muted-foreground">
+                      {hasSubscription
+                        ? 'Enjoy unlimited access to all features'
+                        : 'Unlock full access to maximize your preparation'
+                      }
+                    </p>
+                  </div>
 
-            <div className="flex gap-4 justify-center">
-              <Button variant="outline" onClick={() => navigate('/exams')}>
-                Back to Exams
-              </Button>
-              <Button variant="hero" onClick={() => window.location.reload()}>
-                Try Again
-              </Button>
+                  <div className="flex-1">
+                    <ul className="space-y-3 mb-6">
+                      <li className="flex items-center gap-3">
+                        <CheckCircle2 className={cn("h-5 w-5 shrink-0", hasSubscription ? "text-success" : "text-muted-foreground")} />
+                        <span>Unlimited practice questions</span>
+                      </li>
+                      <li className="flex items-center gap-3">
+                        <CheckCircle2 className={cn("h-5 w-5 shrink-0", hasSubscription ? "text-success" : "text-muted-foreground")} />
+                        <span>Unlimited mock tests</span>
+                      </li>
+                      <li className="flex items-center gap-3">
+                        <CheckCircle2 className={cn("h-5 w-5 shrink-0", hasSubscription ? "text-success" : "text-muted-foreground")} />
+                        <span>Custom question count & time</span>
+                      </li>
+                      <li className="flex items-center gap-3">
+                        <CheckCircle2 className={cn("h-5 w-5 shrink-0", hasSubscription ? "text-success" : "text-muted-foreground")} />
+                        <span>Detailed explanations</span>
+                      </li>
+                      <li className="flex items-center gap-3">
+                        <CheckCircle2 className={cn("h-5 w-5 shrink-0", hasSubscription ? "text-success" : "text-muted-foreground")} />
+                        <span>Track your progress</span>
+                      </li>
+                    </ul>
+                  </div>
+
+                  {!hasSubscription && (
+                    <Button variant="gold" size="lg" className="w-full" asChild>
+                      <Link to={`/payments?exam=${examId}`}>
+                        <CreditCard className="h-5 w-5" />
+                        Subscribe Now
+                      </Link>
+                    </Button>
+                  )}
+
+                  {hasSubscription && (
+                    <div className="text-center p-4 bg-success/10 rounded-xl border border-success/20">
+                      <CheckCircle2 className="h-6 w-6 text-success mx-auto mb-2" />
+                      <p className="font-medium text-success">Active Subscription</p>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -294,35 +405,119 @@ const MockTest = () => {
     );
   }
 
-  // Start Screen
+  // Setup Screen - User configures test
   if (!testStarted) {
+    const maxQuestions = hasSubscription 
+      ? Math.min(totalQuestionsAvailable || 100, 100) 
+      : demoQuestionsLimit;
+    
+    const questionOptions = hasSubscription
+      ? [10, 20, 30, 50, 75, 100].filter(n => n <= maxQuestions)
+      : [demoQuestionsLimit];
+
+    const timeOptions = hasSubscription
+      ? [10, 15, 20, 30, 45, 60, 90, 120]
+      : [10, 15];
+
     return (
       <Layout hideFooter>
         <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4">
-          <div className="glass-card rounded-3xl p-8 max-w-lg w-full text-center">
-            <Clock className="h-16 w-16 text-primary mx-auto mb-6" />
-            <h1 className="font-display text-3xl font-bold mb-2">Mock Test</h1>
-            <p className="text-muted-foreground mb-8">
-              Test your knowledge with a timed exam
-            </p>
-
-            <div className="bg-muted/50 rounded-xl p-6 mb-8">
-              <div className="grid grid-cols-2 gap-4 text-left">
-                <div>
-                  <div className="text-sm text-muted-foreground">Questions</div>
-                  <div className="text-xl font-semibold">{questions?.length || questionCount}</div>
-                </div>
-                <div>
-                  <div className="text-sm text-muted-foreground">Time Limit</div>
-                  <div className="text-xl font-semibold">{timeLimit} mins</div>
-                </div>
+          <div className="glass-card rounded-3xl p-8 max-w-lg w-full">
+            <div className="text-center mb-8">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 mx-auto mb-4">
+                <Settings className="h-8 w-8 text-primary" />
               </div>
+              <h1 className="font-display text-3xl font-bold mb-2">Configure Your Test</h1>
+              <p className="text-muted-foreground">
+                Customize your mock test settings
+              </p>
             </div>
 
-            <div className="text-sm text-muted-foreground mb-8">
+            <div className="space-y-6 mb-8">
+              {/* Question Count Selection */}
+              <div className="space-y-3">
+                <Label className="text-base font-medium">
+                  Number of Questions
+                  {!hasSubscription && (
+                    <span className="text-xs text-muted-foreground ml-2">(Demo limit: {demoQuestionsLimit})</span>
+                  )}
+                </Label>
+                {hasSubscription ? (
+                  <div className="space-y-3">
+                    <Slider
+                      value={[selectedQuestionCount]}
+                      onValueChange={(value) => setSelectedQuestionCount(value[0])}
+                      min={5}
+                      max={maxQuestions}
+                      step={5}
+                      className="py-2"
+                    />
+                    <div className="flex justify-between text-sm text-muted-foreground">
+                      <span>5</span>
+                      <span className="font-semibold text-foreground">{selectedQuestionCount} questions</span>
+                      <span>{maxQuestions}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-4 bg-muted/50 rounded-xl text-center">
+                    <span className="text-2xl font-bold">{demoQuestionsLimit}</span>
+                    <span className="text-muted-foreground ml-2">questions</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Time Limit Selection */}
+              <div className="space-y-3">
+                <Label className="text-base font-medium">
+                  Time Limit
+                  {!hasSubscription && (
+                    <span className="text-xs text-muted-foreground ml-2">(Demo max: 15 mins)</span>
+                  )}
+                </Label>
+                <Select
+                  value={selectedTimeLimit.toString()}
+                  onValueChange={(value) => setSelectedTimeLimit(parseInt(value))}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select time" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {timeOptions.map((time) => (
+                      <SelectItem key={time} value={time.toString()}>
+                        {time >= 60 ? `${time / 60} hour${time > 60 ? 's' : ''}` : `${time} minutes`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Summary */}
+              <div className="bg-muted/50 rounded-xl p-4">
+                <div className="grid grid-cols-2 gap-4 text-center">
+                  <div>
+                    <div className="text-sm text-muted-foreground">Questions</div>
+                    <div className="text-xl font-semibold">{questionCount}</div>
+                  </div>
+                  <div>
+                    <div className="text-sm text-muted-foreground">Time</div>
+                    <div className="text-xl font-semibold">{timeLimit} mins</div>
+                  </div>
+                </div>
+              </div>
+
+              {!hasSubscription && (
+                <div className="p-4 bg-secondary/10 rounded-xl border border-secondary/20">
+                  <p className="text-sm text-center">
+                    <span className="font-medium">Demo Mode:</span> Subscribe to unlock custom settings and unlimited questions
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="text-sm text-muted-foreground mb-6 space-y-1">
               <p>• You can navigate between questions freely</p>
               <p>• Test will auto-submit when time runs out</p>
-              <p>• Use keyboard shortcuts: 1-4 to select, ← → to navigate</p>
+              <p>• Use keyboard: 1-4 to select, ← → to navigate</p>
             </div>
 
             <div className="flex gap-4 justify-center">
@@ -332,15 +527,18 @@ const MockTest = () => {
               <Button 
                 variant="hero" 
                 onClick={handleStartTest}
-                disabled={isLoading || !questions?.length}
+                disabled={countLoading || !totalQuestionsAvailable}
               >
-                {isLoading ? (
+                {countLoading ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
                     Loading...
                   </>
                 ) : (
-                  'Start Test'
+                  <>
+                    <Clock className="h-4 w-4" />
+                    Start Test
+                  </>
                 )}
               </Button>
             </div>
