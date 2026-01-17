@@ -40,6 +40,8 @@ const Dashboard = () => {
       return data;
     },
     enabled: !!user?.id,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 
   // Fetch user stats
@@ -76,6 +78,8 @@ const Dashboard = () => {
       };
     },
     enabled: !!user?.id,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 
   // Fetch recent tests
@@ -95,6 +99,8 @@ const Dashboard = () => {
       return data || [];
     },
     enabled: !!user?.id,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 
   return (
@@ -217,10 +223,10 @@ const Dashboard = () => {
                         </div>
                         <div className="text-right">
                           <div className="font-semibold text-sm">
-                            {test.correct_answers}/{test.total_questions}
+                            {test.correct_answers ?? 0}/{test.total_questions}
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {Math.round((test.correct_answers / test.total_questions) * 100)}%
+                            {test.total_questions > 0 ? Math.round(((test.correct_answers ?? 0) / test.total_questions) * 100) : 0}%
                           </div>
                         </div>
                       </div>
