@@ -135,21 +135,16 @@ const AdminUsers = () => {
         throw new Error('Cannot modify owner role');
       }
 
-      if (newRole === 'user' && existingRole?.role === 'admin') {
-        // Update to user role
-        const { error } = await supabase
-          .from('user_roles')
-          .update({ role: 'user' })
-          .eq('user_id', userId);
-        if (error) throw error;
-      } else if (newRole === 'admin' && existingRole?.role !== 'admin') {
-        // Update to admin role
-        const { error } = await supabase
-          .from('user_roles')
-          .update({ role: 'admin' })
-          .eq('user_id', userId);
-        if (error) throw error;
-      }
+      // Use upsert to handle both insert and update cases
+      // Users without an entry in user_roles default to 'user' role
+      const { error } = await supabase
+        .from('user_roles')
+        .upsert(
+          { user_id: userId, role: newRole },
+          { onConflict: 'user_id' }
+        );
+      
+      if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-user-roles'] });
