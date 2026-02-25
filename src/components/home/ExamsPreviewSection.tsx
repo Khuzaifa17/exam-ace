@@ -1,57 +1,60 @@
 import { Link } from 'react-router-dom';
-import { ArrowRight, FileText, Clock, Users } from 'lucide-react';
+import { ArrowRight, FileText, Clock, Users, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+import { Skeleton } from '@/components/ui/skeleton';
 
-// Sample exam data - will be replaced with real data
-const sampleExams = [
-  {
-    id: '1',
-    slug: 'css',
-    title: 'CSS (Central Superior Services)',
-    description: 'Federal level civil services examination for prestigious positions.',
-    questionCount: 5000,
-    duration: '3 hours',
-    students: 2500,
-    tags: ['Federal', 'Competitive'],
-    color: 'from-emerald-500 to-teal-600',
-  },
-  {
-    id: '2',
-    slug: 'pms',
-    title: 'PMS (Provincial Management Service)',
-    description: 'Provincial level civil services exam for administrative positions.',
-    questionCount: 4000,
-    duration: '3 hours',
-    students: 3200,
-    tags: ['Provincial', 'Competitive'],
-    color: 'from-blue-500 to-indigo-600',
-  },
-  {
-    id: '3',
-    slug: 'ppsc',
-    title: 'PPSC (Punjab Public Service)',
-    description: 'Punjab province civil services and recruitment examinations.',
-    questionCount: 6000,
-    duration: '2 hours',
-    students: 4100,
-    tags: ['Punjab', 'Popular'],
-    color: 'from-amber-500 to-orange-600',
-  },
-  {
-    id: '4',
-    slug: 'nts',
-    title: 'NTS (National Testing Service)',
-    description: 'Standardized testing for jobs, scholarships, and admissions.',
-    questionCount: 8000,
-    duration: '2 hours',
-    students: 5500,
-    tags: ['Jobs', 'Scholarships'],
-    color: 'from-purple-500 to-pink-600',
-  },
+const gradients = [
+  'from-emerald-500 to-teal-600',
+  'from-blue-500 to-indigo-600',
+  'from-amber-500 to-orange-600',
+  'from-purple-500 to-pink-600',
+  'from-rose-500 to-red-600',
+  'from-cyan-500 to-blue-600',
 ];
 
 export const ExamsPreviewSection = () => {
+  const { data: exams, isLoading } = useQuery({
+    queryKey: ['exams-preview'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('exams')
+        .select('*')
+        .eq('is_active', true)
+        .order('title')
+        .limit(4);
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <section className="py-20">
+        <div className="container mx-auto px-4">
+          <Skeleton className="h-10 w-64 mb-4" />
+          <Skeleton className="h-6 w-96 mb-12" />
+          <div className="grid md:grid-cols-2 gap-6">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="glass-card rounded-2xl overflow-hidden">
+                <Skeleton className="h-2 w-full" />
+                <div className="p-6 space-y-3">
+                  <Skeleton className="h-6 w-3/4" />
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-1/2" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (!exams || exams.length === 0) return null;
+
   return (
     <section className="py-20">
       <div className="container mx-auto px-4">
@@ -73,42 +76,32 @@ export const ExamsPreviewSection = () => {
         </div>
 
         <div className="grid md:grid-cols-2 gap-6">
-          {sampleExams.map((exam, index) => (
+          {exams.map((exam, index) => (
             <Link
               key={exam.id}
               to={`/exam/${exam.slug}`}
               className="group glass-card overflow-hidden rounded-2xl hover:shadow-card-hover transition-all duration-300"
               style={{ animationDelay: `${index * 0.1}s` }}
             >
-              {/* Gradient header */}
-              <div className={`h-2 bg-gradient-to-r ${exam.color}`} />
-              
+              <div className={`h-2 bg-gradient-to-r ${gradients[index % gradients.length]}`} />
               <div className="p-6">
                 <div className="flex flex-wrap gap-2 mb-3">
-                  {exam.tags.map((tag) => (
-                    <Badge key={tag} variant="secondary" className="text-xs">
-                      {tag}
-                    </Badge>
-                  ))}
+                  <Badge variant="secondary" className="text-xs">
+                    {exam.demo_questions_limit} Demo Questions
+                  </Badge>
                 </div>
 
                 <h3 className="font-display text-xl font-semibold mb-2 group-hover:text-primary transition-colors">
                   {exam.title}
                 </h3>
-                <p className="text-muted-foreground text-sm mb-4">{exam.description}</p>
+                <p className="text-muted-foreground text-sm mb-4">
+                  {exam.description || 'Comprehensive practice for this competitive exam.'}
+                </p>
 
                 <div className="flex items-center gap-4 text-sm text-muted-foreground">
                   <span className="flex items-center gap-1">
                     <FileText className="h-4 w-4" />
-                    {exam.questionCount.toLocaleString()} MCQs
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Clock className="h-4 w-4" />
-                    {exam.duration}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Users className="h-4 w-4" />
-                    {exam.students.toLocaleString()} students
+                    MCQs
                   </span>
                 </div>
               </div>
