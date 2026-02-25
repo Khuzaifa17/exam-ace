@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { ExamSelector } from '@/components/ExamSelector';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Clock, CheckCircle2, XCircle, Loader2, AlertTriangle, Trophy, CreditCard, Settings } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
@@ -235,8 +236,7 @@ const MockTest = () => {
   }, [testStarted, testCompleted, currentIndex]);
 
   if (!examId) {
-    navigate('/exams');
-    return null;
+    return <ExamSelector mode="mock" />;
   }
 
   if (!user) {
