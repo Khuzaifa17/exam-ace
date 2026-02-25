@@ -24,6 +24,7 @@ export const Navbar = () => {
   };
 
   const navLinks = [
+    { href: '/', label: 'Home' },
     { href: '/exams', label: 'Exams' },
     { href: '/practice', label: 'Practice' },
     { href: '/mock', label: 'Mock Tests' },
