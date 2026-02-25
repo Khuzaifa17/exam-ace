@@ -54,12 +54,50 @@ const Practice = () => {
 
   const questionLimit = hasSubscription ? 50 : demoQuestionsLimit;
 
-  // Fetch questions
+  // Fetch questions — if resuming a session, use saved order; otherwise shuffle fresh
   const { data: questions, isLoading } = useQuery({
     queryKey: ['practice-questions', examId, nodeId, questionLimit],
     queryFn: async () => {
-      if (!examId) return [];
+      if (!examId || !user?.id) return [];
 
+      // 1. Check for an existing incomplete session
+      const { data: existingSessions } = await supabase
+        .from('tests')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('exam_id', examId)
+        .eq('is_mock', false)
+        .is('completed_at', null)
+        .order('started_at', { ascending: false })
+        .limit(1);
+
+      if (existingSessions && existingSessions.length > 0) {
+        // Resume: load questions in saved order
+        const testId = existingSessions[0].id;
+        const { data: savedRows, error: savedErr } = await supabase
+          .from('test_questions')
+          .select('question_id, order_index')
+          .eq('test_id', testId)
+          .order('order_index');
+
+        if (!savedErr && savedRows && savedRows.length > 0) {
+          const qIds = savedRows.map(r => r.question_id);
+          const { data: qData, error: qErr } = await supabase
+            .from('questions_public')
+            .select('*')
+            .in('id', qIds);
+
+          if (!qErr && qData) {
+            // Sort by saved order_index
+            const qMap = new Map(qData.map(q => [q.id, q]));
+            return savedRows
+              .map(r => qMap.get(r.question_id))
+              .filter(Boolean) as QuestionPublic[];
+          }
+        }
+      }
+
+      // 2. No existing session — fetch fresh questions
       const { data: nodes, error: nodesError } = await supabase
         .from('content_nodes')
         .select('id')
@@ -183,6 +221,7 @@ const Practice = () => {
         const testId = existingSessions[0].id;
         setSessionTestId(testId);
 
+        // Load answered questions
         const { data: savedQuestions } = await supabase
           .from('test_questions')
           .select('question_id, selected_option, is_correct, order_index')
@@ -194,20 +233,29 @@ const Practice = () => {
           const restoredAnswers: Record<string, { selected: number; correct: boolean; correctOption: number }> = {};
           let lastAnsweredIndex = 0;
 
+          // Batch: get correct_option for all answered questions at once
           for (const sq of savedQuestions) {
             if (sq.selected_option !== null && sq.is_correct !== null) {
+              restoredAnswers[sq.question_id] = {
+                selected: sq.selected_option,
+                correct: sq.is_correct,
+                correctOption: sq.selected_option, // temporary, will fix below
+              };
+              // Use order_index directly since questions are in saved order
+              if (sq.order_index > lastAnsweredIndex) lastAnsweredIndex = sq.order_index;
+            }
+          }
+
+          // Fetch correct options for answered questions
+          for (const sq of savedQuestions) {
+            if (sq.selected_option !== null) {
               const { data: checkData } = await supabase.rpc('check_answer', {
                 question_id: sq.question_id,
                 selected_option: sq.selected_option,
               });
-              const correctOption = checkData?.[0]?.correct_option ?? sq.selected_option;
-              restoredAnswers[sq.question_id] = {
-                selected: sq.selected_option,
-                correct: sq.is_correct,
-                correctOption,
-              };
-              const qIdx = questions.findIndex(q => q.id === sq.question_id);
-              if (qIdx > lastAnsweredIndex) lastAnsweredIndex = qIdx;
+              if (checkData?.[0]) {
+                restoredAnswers[sq.question_id].correctOption = checkData[0].correct_option;
+              }
             }
           }
 
@@ -215,6 +263,7 @@ const Practice = () => {
           const nextIndex = Math.min(lastAnsweredIndex + 1, questions.length - 1);
           setCurrentIndex(nextIndex);
 
+          // If the next question was already answered, show its answer
           const nextQ = questions[nextIndex];
           if (nextQ && restoredAnswers[nextQ.id]) {
             setSelectedOption(restoredAnswers[nextQ.id].selected);
@@ -227,6 +276,7 @@ const Practice = () => {
           }
         }
       } else {
+        // Create new session
         const { data: newTest } = await supabase
           .from('tests')
           .insert({
